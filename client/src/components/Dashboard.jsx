@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 import ThemeToggler from './ThemeToggler';
 import EditProfile from './EditProfile';
+import Chat from './Chat';
 import './Dashboard.css';
 
 function Dashboard() {
@@ -10,6 +11,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showBotDropdown, setShowBotDropdown] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -89,7 +91,7 @@ function Dashboard() {
             <div className="card-icon">💬</div>
             <h3>Start Chat</h3>
             <p>Begin a conversation with your AI legal assistant</p>
-            <button className="btn-card">Start Chatting</button>
+            <button className="btn-card" onClick={() => setShowChat(true)}>Start Chatting</button>
           </div>
 
           <div className="dashboard-card">
@@ -160,6 +162,10 @@ function Dashboard() {
           onUpdate={handleProfileUpdate}
           onCancel={() => setShowEditProfile(false)}
         />
+      )}
+
+      {showChat && (
+        <Chat onClose={() => setShowChat(false)} />
       )}
     </div>
   );

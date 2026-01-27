@@ -1,0 +1,12 @@
+google-generativeai
+pypdf
+python-dotenv
+fastapi
+uvicorn
+pydantic
+pgvector
+psycopg2-binary
+supabase
+requests
+sentence-transformers
+torch
