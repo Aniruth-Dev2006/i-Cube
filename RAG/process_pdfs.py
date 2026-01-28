@@ -146,9 +146,22 @@ def main():
     processor = PDFProcessor()
     
     try:
-        knowledge_base_dir = os.path.join(os.path.dirname(__file__), 'knowledge-base')
-        processor.process_knowledge_base(knowledge_base_dir)
-        print("\n✓ Knowledge base processing completed successfully!")
+        # Process both knowledge base directories
+        base_dir = os.path.dirname(__file__)
+        
+        # Old knowledge base
+        old_kb_dir = os.path.join(base_dir, 'knowledge-base')
+        if os.path.exists(old_kb_dir):
+            print("\n=== Processing 'knowledge-base' folder ===")
+            processor.process_knowledge_base(old_kb_dir)
+        
+        # New knowledge base
+        new_kb_dir = os.path.join(base_dir, 'New Knowledge Base')
+        if os.path.exists(new_kb_dir):
+            print("\n=== Processing 'New Knowledge Base' folder ===")
+            processor.process_knowledge_base(new_kb_dir)
+        
+        print("\n✓ All knowledge bases processed successfully!")
         
     except Exception as e:
         print(f"\n✗ Error: {str(e)}")

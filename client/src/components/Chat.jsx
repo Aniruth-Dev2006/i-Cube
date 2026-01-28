@@ -48,7 +48,8 @@ function Chat({ onClose }) {
         id: Date.now() + 1,
         type: 'bot',
         content: response.data.data.answer,
-        sources: response.data.data.sources
+        sources: response.data.data.sources,
+        confidence_score: response.data.data.confidence_score
       };
 
       setMessages(prev => [...prev, botMessage]);
@@ -88,7 +89,7 @@ function Chat({ onClose }) {
             <div className="empty-chat">
               <div className="empty-chat-icon">💬</div>
               <h3>Start a Conversation</h3>
-              <p>Ask me anything about Indian cybercrime law and legal procedures</p>
+              <p>Ask me anything about Indian law including civil, criminal, cyber, consumer, family, property law and more</p>
             </div>
           ) : (
             messages.map((message) => (
@@ -98,6 +99,19 @@ function Chat({ onClose }) {
                 </div>
                 <div className="message-content">
                   {message.content}
+                  {message.type === 'bot' && message.confidence_score && (
+                    <div className="confidence-badge" style={{
+                      marginTop: '8px',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.85em',
+                      display: 'inline-block',
+                      backgroundColor: message.confidence_score >= 0.7 ? '#4CAF50' : message.confidence_score >= 0.5 ? '#FF9800' : '#f44336',
+                      color: 'white'
+                    }}>
+                      Confidence: {(message.confidence_score * 100).toFixed(0)}%
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -130,7 +144,7 @@ function Chat({ onClose }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about cybercrime laws, complaints, procedures..."
+              placeholder="Ask about any area of Indian law - civil, criminal, cyber, consumer, family, property..."
               rows={1}
               disabled={loading}
             />

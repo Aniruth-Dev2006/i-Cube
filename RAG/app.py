@@ -8,18 +8,16 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 
 load_dotenv()
 
 # Configure Gemini API
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    print("✓ Gemini API configured successfully")
+    genai.configure(api_key=GEMINI_API_KEY)
+    print("[OK] Gemini API configured successfully")
 else:
-    client = None
     print("Warning: GEMINI_API_KEY not found")
 
 # Load models locally
@@ -46,6 +44,7 @@ class QueryRequest(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     sources: List[dict]
+    confidence_score: float
 
 class RAGSystem:
     def __init__(self):
@@ -78,10 +77,52 @@ class RAGSystem:
             print(f"Embedding generation error: {str(e)}")
             raise
     
-    def search_similar_documents(self, query_embedding, max_results=5):
-        """Search for similar documents using vector similarity"""
+    def search_similar_documents(self, query_embedding, max_results=10, query_text=None):
+        """Hybrid search combining keyword and vector similarity"""
         try:
             cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+            
+            # If query text is provided, try keyword search first (for legal terms)
+            if query_text:
+                # Extract important keywords from query (legal terms)
+                legal_keywords = [
+                    'police', 'arrest', 'warrant', 'court', 'judge', 'law', 'legal',
+                    'rights', 'crime', 'criminal', 'civil', 'ipc', 'section', 'act',
+                    'detention', 'bail', 'custody', 'lawyer', 'advocate', 'case',
+                    'property', 'divorce', 'marriage', 'contract', 'agreement', 'dispute'
+                ]
+                
+                # Find matching keywords in query
+                query_lower = query_text.lower()
+                found_keywords = [kw for kw in legal_keywords if kw in query_lower]
+                
+                if found_keywords:
+                    print(f"[DEBUG] Found legal keywords: {found_keywords[:3]}...")
+                    # Build keyword search query
+                    keyword_conditions = " OR ".join([f"LOWER(content) LIKE %s" for _ in found_keywords[:5]])  # Limit to top 5 keywords
+                    keyword_params = [f"%{kw}%" for kw in found_keywords[:5]]
+                    
+                    # Hybrid search: combine keyword matches with vector similarity
+                    cursor.execute(f"""
+                        SELECT 
+                            id,
+                            content,
+                            metadata,
+                            1 - (embedding <=> %s::vector) AS similarity,
+                            CASE WHEN ({keyword_conditions}) THEN 1 ELSE 0 END as keyword_match
+                        FROM documents
+                        ORDER BY keyword_match DESC, embedding <=> %s::vector
+                        LIMIT %s
+                    """, (query_embedding, *keyword_params, query_embedding, max_results))
+                    
+                    results = cursor.fetchall()
+                    keyword_matches = sum(1 for r in results if r.get('keyword_match', 0) == 1)
+                    print(f"[DEBUG] Found {len(results)} documents ({keyword_matches} keyword matches)")
+                    cursor.close()
+                    return results
+            
+            # Fallback to pure vector search
+            print(f"[DEBUG] Using vector search with max_results={max_results}")
             
             cursor.execute(
                 """
@@ -91,14 +132,16 @@ class RAGSystem:
                     metadata,
                     1 - (embedding <=> %s::vector) AS similarity
                 FROM documents
-                WHERE 1 - (embedding <=> %s::vector) > 0.3
                 ORDER BY embedding <=> %s::vector
                 LIMIT %s
                 """,
-                (query_embedding, query_embedding, query_embedding, max_results)
+                (query_embedding, query_embedding, max_results)
             )
             
             results = cursor.fetchall()
+            print(f"[DEBUG] Found {len(results)} similar documents")
+            if results:
+                print(f"[DEBUG] Top similarity: {results[0]['similarity']:.4f}")
             cursor.close()
             
             return results
@@ -121,13 +164,23 @@ class RAGSystem:
             # For follow-up questions (short queries with conversation history), use Gemini even without docs
             is_followup = conversation_context and len(query.split()) < 10
             
-            if not context_docs and not is_followup:
-                return "I couldn't find specific information about this topic in my legal knowledge base. Please rephrase your question or ask about Indian cybercrime law, legal procedures, or related topics."
+            # Check if this is a legal question
+            legal_keywords = ['law', 'legal', 'rights', 'police', 'arrest', 'court', 'judge', 'crime', 'warrant', 
+                            'section', 'act', 'ipc', 'lawyer', 'advocate', 'case', 'procedure', 'violation']
+            is_legal_query = any(keyword in query.lower() for keyword in legal_keywords)
+            
+            # If it's a legal question, allow Gemini to answer even with limited context
+            if not context_docs and not is_followup and not is_legal_query:
+                return "I couldn't find specific information about this topic in my legal knowledge base. Please rephrase your question or ask about Indian law, legal procedures, or related legal topics."
             
             # Prepare context from documents
             context_parts = []
             if context_docs:
-                for doc in context_docs[:5]:  # Top 5 most relevant docs
+                # Check if this is a lawyer query - if so, use more documents
+                is_lawyer_query = any(kw in query.lower() for kw in ['lawyer', 'advocate', 'attorney', 'counsel'])
+                doc_limit = 10 if is_lawyer_query else 5
+                
+                for doc in context_docs[:doc_limit]:  # Top N most relevant docs
                     content = doc['content'].strip()
                     # Clean citations
                     content = content.replace('[cite_start]', '').replace('[cite_end]', '')
@@ -137,39 +190,107 @@ class RAGSystem:
             context = "\n\n---\n\n".join(context_parts) if context_parts else ""
             
             # Use Gemini API to generate intelligent answer
-            if client:
+            if GEMINI_API_KEY:
                 try:
+                    # Detect if this is a lawyer/advocate query
+                    is_lawyer_query = any(kw in query.lower() for kw in ['lawyer', 'advocate', 'attorney', 'counsel'])
+                    
                     # Create prompt for Gemini (conversation_context already built above)
-                    prompt = f"""You are a legal assistant specializing in Indian cybercrime law. Answer the user's question based on the provided legal documents and conversation history.
+                    if is_lawyer_query:
+                        prompt = f"""You are a comprehensive legal assistant specializing in Indian law. The user is asking for lawyer/advocate information.
+
+User Question: {query}
+
+{f"Legal Context from Documents:\n{context}" if context else ""}
+
+IMPORTANT INSTRUCTIONS FOR LAWYER QUERIES:
+1. The context contains a list of advocates with their specializations
+2. Look for advocates/lawyers that match the user's requested specialization (e.g., "Civil Law", "Criminal Law", "Cyber Law", etc.)
+3. Extract ALL lawyer names that match the specialization
+4. Format the response as a clear list of advocates with their names
+5. If you find lawyers in the context, present them in a numbered list
+6. Include ALL lawyers you find in the context for that specialization
+7. Do NOT say you cannot find lawyers if the context contains lawyer names with the requested specialization
+
+Format your response like this:
+### [Specialization] Advocates
+
+Here is a list of advocates specializing in [specialization]:
+
+1. Advocate [Name]
+2. Advocate [Name]
+...
+
+For legal assistance, you can contact any of the above advocates based on your location preference.
+
+Answer:"""
+                    else:
+                        prompt = f"""You are a legal assistant. Answer using ONLY numbered points - NO paragraphs.
 
 User Question: {query}
 
 {f"Previous Conversation:\n{conversation_context}" if conversation_context else ""}
 
-{f"Legal Context from Documents:\n{context}" if context else ""}
+{f"Legal Context:\n{context}" if context else ""}
 
-Instructions:
-1. IMPORTANT: If this is a follow-up question, use the previous conversation to understand the context
-2. For follow-up questions like "give one perfect section to file case", refer to the specific crime discussed in the previous conversation
-3. Understand the user's specific situation and question
-4. Find the most relevant information from the legal context OR previous conversation
-5. Provide a clear, structured answer with:
-   - Direct answer to their question (Yes/No if applicable)
-   - List of applicable criminal offences with section numbers (IPC, IT Act, BNS)
-   - Immediate practical steps they should take
-   - Specific remedies and legal protections available
-   - Contact information (helplines, cyber crime portal)
-6. Format professionally with clear sections and bullet points
-7. Be comprehensive but concise (aim for 300-500 words)
-8. Use practical, actionable language
+CRITICAL FORMAT RULES:
+- NO introductory text
+- NO paragraphs
+- ONLY numbered lists (1., 2., 3., etc.)
+- MUST put each numbered point on a NEW LINE
+- Add blank line between sections
+- Simple language
+- Keep each point to 1 line maximum
+
+EXAMPLE FORMAT:
+
+**Your Situation:**
+1. First point here
+2. Second point here
+
+**Laws Violated/Applied:**
+1. Section X - Act - description
+2. Section Y - Act - description
+
+If NO relevant information:
+1. No information on [topic] in provided documents
+2. Documents cover: [list topics]
+3. Report to police immediately
+4. Seek medical attention
+5. Consult criminal/civil lawyer
+
+If information IS found:
+
+**Your Situation:**
+1. [Direct statement]
+2. [Another point]
+
+**Laws Violated/Applied:**
+1. Section X - [Act] - [brief description]
+2. Section Y - [Act] - [brief description]
+
+**Police Violations:**
+1. [Violation 1]
+2. [Violation 2]
+
+**Immediate Actions:**
+1. [Action 1]
+2. [Action 2]
+3. [Action 3]
+
+**Legal Remedies:**
+1. [Remedy 1]
+2. [Remedy 2]
+
+**Contacts:**
+1. Legal aid: 15100 (NALSA)
+2. Police: [relevant number]
 
 Answer:"""
                     
                     print(f"Calling Gemini API for query: {query[:50]}...")
-                    response = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=prompt
-                    )
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content(prompt)
                     answer = response.text.strip()
                     
                     if answer:
@@ -181,176 +302,15 @@ Answer:"""
                         
                 except Exception as e:
                     print(f"Gemini API error: {str(e)}")
-                    # Fall through to fallback
-            
-            # Fallback if Gemini fails or not configured
-            print("Using fallback answer generation...")
-            
-            # Combine all document content
-            all_content = "\n\n".join([doc['content'] for doc in context_docs])
-            clean_content = all_content.replace('[cite_start]', '').replace('[cite_end]', '')
-            clean_content = clean_content.replace('[cite:', '').replace(']', '')
-            
-            # Check if asking for sections
-            query_lower = query.lower()
-            asking_for_section = any(word in query_lower for word in ['section', 'which law', 'what law', 'file case', 'file complaint', 'report', 'perfect section'])
-            
-            # If asking for specific section, look for section numbers
-            if asking_for_section:
-                import re
-                sections_found = []
-                section_details = {}
-                
-                # Look for section mentions in all content
-                section_patterns = [
-                    (r'Section\s+(\d+[A-Z]*)', 'Section'),
-                    (r'IPC\s+Section\s+(\d+[A-Z]*)', 'IPC Section'),
-                    (r'IT\s+Act\s+Section\s+(\d+[A-Z]*)', 'IT Act Section'),
-                    (r'BNS\s+Section\s+(\d+[A-Z]*)', 'BNS Section'),
-                    (r'Section\s+(\d+[A-Z]*)\s+of\s+IT\s+Act', 'IT Act Section'),
-                    (r'(354D)', 'IPC Section'),  # Specific cyber stalking section
-                    (r'(66E)', 'IT Act Section'),  # Privacy violation section
-                ]
-                
-                for pattern, prefix in section_patterns:
-                    matches = re.finditer(pattern, all_content, re.IGNORECASE)
-                    for match in matches:
-                        section_num = match.group(1) if match.lastindex else match.group(0)
-                        section_full = f"{prefix} {section_num}"
-                        
-                        if section_full not in section_details:
-                            # Get context around this section
-                            pos = match.start()
-                            # Look for the complete explanation
-                            start = max(0, pos - 50)
-                            end = min(len(all_content), pos + 250)
-                            context = all_content[start:end]
-                            
-                            # Clean up
-                            context = context.replace('[cite_start]', '').replace('[cite_end]', '')
-                            context = context.replace('[cite:', '').replace(']', '')
-                            
-                            # Extract the relevant sentence
-                            sentences = context.split('.')
-                            relevant = ''
-                            for sent in sentences:
-                                if section_num in sent or prefix.split()[0] in sent:
-                                    relevant = sent.strip()
-                                    break
-                            
-                            if relevant and len(relevant) > 20:
-                                section_details[section_full] = relevant
-                                sections_found.append(section_full)
-                        
-                        if len(sections_found) >= 3:
-                            break
-                    if len(sections_found) >= 3:
-                        break
-                
-                if sections_found:
-                    answer = "**⚖️ Yes, this is punishable under Indian law.**\n\n"
-                    answer += "**Applicable Legal Sections:**\n\n"
-                    
-                    for i, section in enumerate(sections_found[:3], 1):
-                        detail = section_details[section]
-                        # Clean up and format detail
-                        detail = ' '.join(detail.split())
-                        if len(detail) > 150:
-                            detail = detail[:150] + "..."
-                        answer += f"{i}. **{section}**\n   {detail}\n\n"
-                    
-                    answer += "---\n\n"
-                    answer += "**📋 How to File a Complaint:**\n\n"
-                    answer += "1. **Online**: Visit cybercrime.gov.in and file an e-FIR\n"
-                    answer += "2. **Offline**: Visit your nearest cybercrime police station\n"
-                    answer += "3. **Evidence**: Collect screenshots, messages, URLs, and timestamps\n"
-                    answer += "4. **Legal Help**: Consult a lawyer for proper case filing\n\n"
-                    answer += "**🆘 Emergency Helpline**: 1930 (Cyber Crime Helpline)"
-                    return answer
-            
-            # For general questions, find the most relevant answer
-            # Clean up all content
-            clean_content = all_content.replace('[cite_start]', '').replace('[cite_end]', '')
-            clean_content = clean_content.replace('[cite:', '').replace(']', '')
-            
-            # Look for Q&A pairs that match the query
-            import re
-            qa_pattern = r'Q[:\d]*\s*(.+?)\s*A[:\d]*\s*(.+?)(?=Q[:\d]|$)'
-            qa_matches = re.findall(qa_pattern, clean_content, re.DOTALL | re.IGNORECASE)
-            
-            best_qa = []
-            query_terms = set(query_lower.split())
-            
-            for question, answer_text in qa_matches:
-                question = question.strip()
-                answer_text = answer_text.strip()
-                
-                # Skip very short or empty
-                if len(question) < 10 or len(answer_text) < 10:
-                    continue
-                
-                # Calculate relevance score
-                q_words = set(question.lower().split())
-                relevance = len(query_terms.intersection(q_words))
-                
-                if relevance > 0:
-                    # Clean up the answer
-                    answer_text = answer_text.split('Q:')[0].split('Q1')[0].strip()
-                    # Remove extra whitespace
-                    answer_text = ' '.join(answer_text.split())
-                    # Limit length
-                    if len(answer_text) > 300:
-                        answer_text = answer_text[:300] + "..."
-                    best_qa.append((relevance, question, answer_text))
-            
-            # Sort by relevance
-            best_qa.sort(reverse=True, key=lambda x: x[0])
-            
-            if best_qa:
-                # Create structured answer with the most relevant Q&A
-                answer = "**📋 Legal Information:**\n\n"
-                
-                # Show top 2-3 most relevant
-                for i, (_, q, a) in enumerate(best_qa[:3], 1):
-                    # Clean up question
-                    q = q.replace('What is', '').replace('Is', '').strip()
-                    if not q.endswith('?'):
-                        q += '?'
-                    
-                    answer += f"**{i}. {q}**\n\n{a}\n\n"
-                    answer += "---\n\n"
-                
-                answer += "**📞 Next Steps:**\n"
-                answer += "• File a complaint at your nearest cybercrime police station\n"
-                answer += "• Report online at: cybercrime.gov.in\n"
-                answer += "• Consult with a lawyer for legal guidance\n"
-                answer += "• Keep all evidence (screenshots, messages, URLs)"
-                
-                return answer
+                    raise Exception(f"Gemini API failed: {str(e)}")
             else:
-                # Fallback: Extract first meaningful paragraphs with better formatting
-                paragraphs = [p.strip() for p in clean_content.split('\n\n') if len(p.strip()) > 50]
-                
-                if paragraphs:
-                    answer = "**📋 Legal Information:**\n\n"
-                    # Take first 2 relevant paragraphs
-                    content = ' '.join(paragraphs[:2])
-                    if len(content) > 400:
-                        content = content[:400] + "..."
-                    answer += content
-                    answer += "\n\n**📞 Next Steps:**\n"
-                    answer += "• Consult with a qualified lawyer\n"
-                    answer += "• Visit your nearest cybercrime police station\n"
-                    answer += "• File online complaint at cybercrime.gov.in"
-                    return answer
-                else:
-                    return "I couldn't find specific information about this topic. Please consult with a legal expert or visit your nearest cybercrime police station."
-            
+                raise Exception("GEMINI_API_KEY not configured")
+        
         except Exception as e:
             print(f"Answer generation error: {str(e)}")
             import traceback
             traceback.print_exc()
-            return "I apologize, but I'm having trouble processing your request. Please try rephrasing your question."
+            return f"Error: Unable to generate answer using Gemini. {str(e)}"
     
     def is_greeting_or_casual(self, text: str) -> bool:
         """Check if the query is a greeting or casual conversation"""
@@ -370,26 +330,94 @@ Answer:"""
         # Only exact matches for greetings, allow longer queries through
         return text_lower in greetings or text_lower in casual_queries
     
+    def calculate_confidence_score(self, query: str, similar_docs: List[dict], answer: str) -> float:
+        """Calculate confidence score based on document similarity and answer quality"""
+        try:
+            if not similar_docs:
+                # No documents found - low confidence for non-greetings
+                return 0.3 if len(answer) > 100 else 0.1
+            
+            # Calculate average similarity score from top documents
+            avg_similarity = sum(doc['similarity'] for doc in similar_docs[:3]) / min(len(similar_docs), 3)
+            
+            # Factors that affect confidence:
+            # 1. Document similarity (weight: 0.5)
+            doc_score = avg_similarity * 0.5
+            
+            # 2. Number of relevant documents (weight: 0.2)
+            num_docs_score = min(len(similar_docs) / 5.0, 1.0) * 0.2
+            
+            # 3. Answer quality - length and structure (weight: 0.15)
+            answer_length_score = min(len(answer.split()) / 300.0, 1.0) * 0.15
+            
+            # 4. Presence of structured information (sections, bullet points) (weight: 0.15)
+            structure_indicators = ['\n-', '\n•', '\n*', ':\n', 'Section', 'IPC', 'IT Act', 'BNS']
+            structure_score = min(sum(1 for indicator in structure_indicators if indicator in answer) / 5.0, 1.0) * 0.15
+            
+            # Calculate final confidence score (0-1 range)
+            confidence = doc_score + num_docs_score + answer_length_score + structure_score
+            
+            # Ensure confidence is between 0.1 and 0.99
+            confidence = max(0.1, min(0.99, confidence))
+            
+            return round(confidence, 2)
+            
+        except Exception as e:
+            print(f"Confidence calculation error: {str(e)}")
+            return 0.5  # Default medium confidence on error
+    
     def handle_greeting(self, query: str) -> str:
         """Generate appropriate response for greetings"""
         query_lower = query.lower().strip()
         
         if any(g in query_lower for g in ['hi', 'hello', 'hey', 'howdy', 'hiya']):
-            return "Hello! I'm your legal assistant specializing in Indian cybercrime law and legal matters. How can I help you today?"
+            return "Hello! I'm your comprehensive legal assistant specializing in Indian law. I can help with civil, criminal, cyber, consumer, family, property law and more. How can I help you today?"
         elif any(g in query_lower for g in ['good morning']):
-            return "Good morning! I'm here to help you with legal questions, particularly related to cybercrime law. What would you like to know?"
+            return "Good morning! I'm here to help you with all types of legal questions across Indian law. What would you like to know?"
         elif any(g in query_lower for g in ['good afternoon']):
-            return "Good afternoon! I'm your legal assistant. Feel free to ask me any questions about cybercrime law or legal procedures."
+            return "Good afternoon! I'm your legal assistant. Feel free to ask me any questions about Indian law, legal procedures, and rights."
         elif any(g in query_lower for g in ['good evening']):
-            return "Good evening! I'm here to assist you with legal questions. How may I help you?"
+            return "Good evening! I'm here to assist you with legal questions across all areas of Indian law. How may I help you?"
         elif any(g in query_lower for g in ['how are you', 'whats up', "what's up"]):
-            return "I'm functioning well, thank you! I'm ready to help you with legal questions, especially regarding cybercrime law and procedures. What can I assist you with?"
+            return "I'm functioning well, thank you! I'm ready to help you with legal questions across all areas of Indian law. What can I assist you with?"
         elif any(g in query_lower for g in ['thank', 'thanks']):
-            return "You're welcome! Feel free to ask if you have any more questions."
+            return "You're welcome! Feel free to ask if you have any more questions about legal matters."
         elif any(g in query_lower for g in ['bye', 'goodbye', 'see you']):
             return "Goodbye! Don't hesitate to return if you need legal assistance in the future."
         else:
-            return "Hello! I'm your legal assistant. I can help you with questions about cybercrime law, legal procedures, and more. What would you like to know?"
+            return "Hello! I'm your comprehensive legal assistant. I can help you with questions about Indian law including civil, criminal, cyber, consumer, family, property law and more. What would you like to know?"
+    
+    def is_lawyer_query(self, query: str) -> tuple[bool, str]:
+        """Detect if query is asking for lawyer/advocate information and extract specialization"""
+        query_lower = query.lower()
+        lawyer_keywords = ['lawyer', 'advocate', 'attorney', 'counsel', 'legal professional']
+        
+        is_lawyer = any(keyword in query_lower for keyword in lawyer_keywords)
+        
+        if not is_lawyer:
+            return False, None
+        
+        # Extract specialization - be more flexible with matching
+        specializations = {
+            'civil': ['civil', 'civil section'],  # Matches "civil" or "civil section"
+            'criminal': ['criminal', 'ipc', 'indian penal code', 'penal'],  # IPC = Indian Penal Code (criminal law)
+            'cyber': ['cyber', 'cybercrime', 'it act', 'information technology act'],
+            'family': ['family', 'divorce', 'marriage', 'matrimonial'],
+            'property': ['property', 'real estate'],
+            'corporate': ['corporate', 'business', 'company'],
+            'ipr': ['intellectual property', 'patent', 'trademark', 'copyright'],  # Removed 'ipr' to avoid confusion with IPC
+            'tax': ['tax'],
+            'consumer': ['consumer'],
+            'labour': ['labour', 'labor', 'employment'],
+            'banking': ['banking', 'finance', 'financial']
+        }
+        
+        for spec, keywords in specializations.items():
+            if any(kw in query_lower for kw in keywords):
+                print(f"[DEBUG] Detected specialization: {spec}")
+                return True, spec
+        
+        return True, None  # General lawyer query
     
     def query(self, query_text: str, max_results: int = 5, conversation_history: Optional[List[dict]] = None):
         """Main RAG query function with conversation memory"""
@@ -398,14 +426,72 @@ Answer:"""
             if self.is_greeting_or_casual(query_text):
                 return {
                     "answer": self.handle_greeting(query_text),
-                    "sources": []
+                    "sources": [],
+                    "confidence_score": 0.95  # High confidence for greetings
                 }
             
-            # Generate query embedding
-            query_embedding = self.generate_embedding(query_text)
+            # Check if this is a lawyer query and reformulate if needed
+            is_lawyer, specialization = self.is_lawyer_query(query_text)
             
-            # Search for similar documents
-            similar_docs = self.search_similar_documents(query_embedding, max_results)
+            # Set max_results based on query type
+            if is_lawyer:
+                # Increase max_results for lawyer queries to get more lawyer chunks
+                max_results = max(max_results, 20)
+            else:
+                # For general legal queries, also increase max_results to get more context
+                max_results = max(max_results, 15)
+            
+            # Generate embedding based on query type
+            if is_lawyer and specialization:
+                # Reformulate query to match "Advocate [Name] [Specialization] Law" pattern
+                reformulated_query = f"Advocate {specialization.title()} Law"
+                print(f"[DEBUG] Lawyer query detected. Reformulated: '{reformulated_query}'")
+                query_embedding = self.generate_embedding(reformulated_query)
+            elif is_lawyer:
+                query_embedding = self.generate_embedding("Advocate Law lawyer")
+            else:
+                # Generate query embedding normally
+                query_embedding = self.generate_embedding(query_text)
+            
+            # Search for similar documents - pass query_text for hybrid search
+            similar_docs = self.search_similar_documents(query_embedding, max_results, query_text=query_text)
+            print(f"[DEBUG] Search returned {len(similar_docs) if similar_docs else 0} documents")
+            
+            # For lawyer queries with specialization, ALWAYS use keyword search to ensure we get the right specialty
+            if is_lawyer and specialization:
+                print(f"[DEBUG] This is a lawyer query for specialization: {specialization}")
+                print(f"[DEBUG] Using keyword search to find exact matches for '{specialization} Law'")
+                try:
+                    cursor = self.db_conn.cursor(cursor_factory=RealDictCursor)
+                    search_term = f"%{specialization.title()} Law%"
+                    print(f"[DEBUG] Searching for: {search_term}")
+                    cursor.execute("""
+                        SELECT 
+                            id,
+                            content,
+                            metadata,
+                            0.9 AS similarity
+                        FROM documents
+                        WHERE content LIKE %s
+                        AND metadata->>'source' = 'Lawyer.pdf'
+                        LIMIT 10
+                    """, (search_term,))
+                    keyword_results = cursor.fetchall()
+                    cursor.close()
+                    
+                    if keyword_results:
+                        print(f"[DEBUG] Found {len(keyword_results)} matches with keyword search for Civil Law")
+                        for kr in keyword_results[:2]:
+                            print(f"[DEBUG] Sample: {kr['content'][:80]}...")
+                        # Use keyword results only (they're more accurate for lawyer queries)
+                        similar_docs = keyword_results
+                        print(f"[DEBUG] Returning {len(similar_docs)} documents to client")
+                    else:
+                        print(f"[DEBUG] Keyword search returned 0 results, using vector search")
+                except Exception as e:
+                    print(f"[DEBUG] Keyword search error: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Generate answer - even if no similar docs found, allow LLM to respond
             if similar_docs:
@@ -428,9 +514,13 @@ Answer:"""
                     for doc in similar_docs
                 ]
             
+            # Calculate confidence score
+            confidence_score = self.calculate_confidence_score(query_text, similar_docs, answer)
+            
             return {
                 "answer": answer,
-                "sources": sources
+                "sources": sources,
+                "confidence_score": confidence_score
             }
             
         except Exception as e:
@@ -466,6 +556,43 @@ async def health():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+@app.post("/debug-lawyer")
+async def debug_lawyer(request: QueryRequest):
+    """Debug endpoint to see what's happening with lawyer queries"""
+    query_text = request.query
+    
+    # Test detection
+    is_lawyer, spec = rag_system.is_lawyer_query(query_text)
+    
+    # Test keyword search
+    keyword_results = []
+    if is_lawyer and spec:
+        try:
+            cursor = rag_system.db_conn.cursor(cursor_factory=RealDictCursor)
+            search_term = f"%{spec.title()} Law%"
+            cursor.execute("""
+                SELECT content, metadata
+                FROM documents
+                WHERE content LIKE %s
+                AND metadata->>'source' = 'Lawyer.pdf'
+                LIMIT 5
+            """, (search_term,))
+            keyword_results = cursor.fetchall()
+            cursor.close()
+        except Exception as e:
+            keyword_results = [{"error": str(e)}]
+    
+    return {
+        "query": query_text,
+        "is_lawyer_query": is_lawyer,
+        "detected_specialization": spec,
+        "keyword_search_count": len(keyword_results),
+        "keyword_results_preview": [
+            {"content": r.get('content', '')[:200] + "..."} 
+            for r in keyword_results[:3]
+        ] if keyword_results else []
+    }
 
 @app.post("/query", response_model=QueryResponse)
 async def query_knowledge_base(request: QueryRequest):

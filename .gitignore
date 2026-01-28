@@ -1,3 +1,47 @@
 server/.env
 RAG/.env
 .env
+
+# Dependencies
+node_modules/
+server/node_modules/
+client/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+RAG/env/
+RAG/venv/
+RAG/__pycache__/
+
+# Build outputs
+client/dist/
+client/build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Uploads
+server/uploads/profiles/*
+!server/uploads/profiles/.gitkeep
+
+# Test files
+RAG/test_*.py
+RAG/check_*.py
+RAG/search_*.py
