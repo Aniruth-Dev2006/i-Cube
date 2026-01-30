@@ -4,6 +4,7 @@ import { authService } from '../services/authService';
 import ThemeToggler from './ThemeToggler';
 import EditProfile from './EditProfile';
 import Chat from './Chat';
+import CostEstimation from './CostEstimation';
 import './Dashboard.css';
 
 function Dashboard() {
@@ -12,6 +13,8 @@ function Dashboard() {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showBotDropdown, setShowBotDropdown] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [selectedBot, setSelectedBot] = useState(null);
+  const [showCostEstimation, setShowCostEstimation] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -41,6 +44,12 @@ function Dashboard() {
   const handleProfileUpdate = (updatedUser) => {
     setUser(updatedUser);
     setShowEditProfile(false);
+  };
+
+  const handleSpecializedBot = (botType) => {
+    setSelectedBot(botType);
+    setShowBotDropdown(false);
+    setShowChat(true);
   };
 
   if (loading) {
@@ -98,7 +107,7 @@ function Dashboard() {
             <div className="card-icon">💰</div>
             <h3>Cost Estimation Model</h3>
             <p>Estimate legal consultation and case costs</p>
-            <button className="btn-card">Get Estimate</button>
+            <button className="btn-card" onClick={() => setShowCostEstimation(true)}>Get Estimate</button>
           </div>
 
           <div className="dashboard-card">
@@ -129,25 +138,21 @@ function Dashboard() {
               </button>
               {showBotDropdown && (
                 <div className="dropdown-list">
-                  <button className="dropdown-option">
+                  <button className="dropdown-option" onClick={() => handleSpecializedBot('cyber')}>
                     <span className="option-icon">🛡️</span>
                     <span className="option-text">Cyber Law</span>
                   </button>
-                  <button className="dropdown-option">
+                  <button className="dropdown-option" onClick={() => handleSpecializedBot('family')}>
                     <span className="option-icon">👨‍👩‍👧</span>
                     <span className="option-text">Family Law</span>
                   </button>
-                  <button className="dropdown-option">
+                  <button className="dropdown-option" onClick={() => handleSpecializedBot('property')}>
                     <span className="option-icon">🏠</span>
                     <span className="option-text">Property Law</span>
                   </button>
-                  <button className="dropdown-option">
-                    <span className="option-icon">⚖️</span>
-                    <span className="option-text">Criminal Law</span>
-                  </button>
-                  <button className="dropdown-option">
+                  <button className="dropdown-option" onClick={() => handleSpecializedBot('corporate')}>
                     <span className="option-icon">💼</span>
-                    <span className="option-text">Commercial Law</span>
+                    <span className="option-text">Corporate Law</span>
                   </button>
                 </div>
               )}
@@ -165,7 +170,17 @@ function Dashboard() {
       )}
 
       {showChat && (
-        <Chat onClose={() => setShowChat(false)} />
+        <Chat 
+          onClose={() => {
+            setShowChat(false);
+            setSelectedBot(null);
+          }} 
+          selectedBot={selectedBot}
+        />
+      )}
+
+      {showCostEstimation && (
+        <CostEstimation onClose={() => setShowCostEstimation(false)} />
       )}
     </div>
   );

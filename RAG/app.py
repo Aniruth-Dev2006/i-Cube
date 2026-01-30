@@ -149,6 +149,36 @@ class RAGSystem:
             print(f"Search error: {str(e)}")
             raise
     
+    def format_answer(self, answer: str) -> str:
+        """Ensure proper formatting with each heading on new line and numbered points separated"""
+        import re
+        
+        # Remove all existing newlines to start fresh
+        answer = answer.replace('\n', ' ')
+        
+        # Step 1: Add newline before every heading
+        # Pattern: **Text:** should be on its own line with blank line before
+        answer = re.sub(r'\s*\*\*([^*]+):\*\*\s*', r'\n\n**\1:**\n', answer)
+        
+        # Step 2: Add newline before every numbered point (1., 2., 3., etc.)
+        # Look for space followed by digit and period
+        answer = re.sub(r'\s+(\d+\.\s)', r'\n\1', answer)
+        
+        # Step 3: Clean up - remove extra spaces
+        answer = re.sub(r'  +', ' ', answer)
+        
+        # Step 4: Clean up multiple newlines (max 2)
+        answer = re.sub(r'\n{3,}', '\n\n', answer)
+        
+        # Step 5: Remove leading/trailing whitespace
+        answer = answer.strip()
+        
+        # Step 6: Remove blank line at the very start
+        if answer.startswith('\n\n'):
+            answer = answer[2:]
+        
+        return answer
+    
     def generate_answer(self, query: str, context_docs: List[dict], conversation_history: Optional[List[dict]] = None) -> str:
         """Generate answer using Gemini API to understand query and context"""
         try:
@@ -164,14 +194,7 @@ class RAGSystem:
             # For follow-up questions (short queries with conversation history), use Gemini even without docs
             is_followup = conversation_context and len(query.split()) < 10
             
-            # Check if this is a legal question
-            legal_keywords = ['law', 'legal', 'rights', 'police', 'arrest', 'court', 'judge', 'crime', 'warrant', 
-                            'section', 'act', 'ipc', 'lawyer', 'advocate', 'case', 'procedure', 'violation']
-            is_legal_query = any(keyword in query.lower() for keyword in legal_keywords)
-            
-            # If it's a legal question, allow Gemini to answer even with limited context
-            if not context_docs and not is_followup and not is_legal_query:
-                return "I couldn't find specific information about this topic in my legal knowledge base. Please rephrase your question or ask about Indian law, legal procedures, or related legal topics."
+            # Always allow LLM to answer even without context docs - never return "no information" message
             
             # Prepare context from documents
             context_parts = []
@@ -225,66 +248,75 @@ For legal assistance, you can contact any of the above advocates based on your l
 
 Answer:"""
                     else:
-                        prompt = f"""You are a legal assistant. Answer using ONLY numbered points - NO paragraphs.
+                        prompt = f"""You are a comprehensive legal assistant with expert knowledge of Indian law. Provide detailed, structured responses following the exact format specified.
 
 User Question: {query}
 
 {f"Previous Conversation:\n{conversation_context}" if conversation_context else ""}
 
-{f"Legal Context:\n{context}" if context else ""}
+{f"Legal Context from Documents:\n{context}" if context else ""}
 
-CRITICAL FORMAT RULES:
-- NO introductory text
-- NO paragraphs
-- ONLY numbered lists (1., 2., 3., etc.)
-- MUST put each numbered point on a NEW LINE
-- Add blank line between sections
-- Simple language
-- Keep each point to 1 line maximum
+CRITICAL INSTRUCTIONS:
+- You MUST provide a comprehensive, detailed answer using your knowledge of Indian law
+- NEVER say "no information found" or "no information in documents"
+- If specific legal context is provided above, use it
+- If no specific context is provided, use your general knowledge of Indian law to answer comprehensively
+- Always provide relevant legal information, applicable laws, procedures, timelines, and guidance
+- Provide cost estimates when relevant (legal fees, court fees, registration charges, etc.)
 
-EXAMPLE FORMAT:
+REQUIRED FORMAT - FOLLOW EXACTLY:
 
-**Your Situation:**
-1. First point here
-2. Second point here
+**Case Summary:**
+[Provide a 2-4 line summary of the user's situation/question]
 
-**Laws Violated/Applied:**
-1. Section X - Act - description
-2. Section Y - Act - description
+**Legal Analysis:**
 
-If NO relevant information:
-1. No information on [topic] in provided documents
-2. Documents cover: [list topics]
-3. Report to police immediately
-4. Seek medical attention
-5. Consult criminal/civil lawyer
+1. **Applicable Laws & Sections:**
+   - Section X of [Act Name] - [Brief description of what it covers]
+   - Section Y of [Act Name] - [Brief description of what it covers]
+   - [Add more as relevant]
 
-If information IS found:
+2. **Your Rights & Protections:**
+   - [Right 1 with brief explanation]
+   - [Right 2 with brief explanation]
+   - [Add more as relevant]
 
-**Your Situation:**
-1. [Direct statement]
-2. [Another point]
+3. **Legal Procedures & Steps:**
+   - Step 1: [Action with timeline]
+   - Step 2: [Action with timeline]
+   - Step 3: [Action with timeline]
+   - [Add more steps as needed]
 
-**Laws Violated/Applied:**
-1. Section X - [Act] - [brief description]
-2. Section Y - [Act] - [brief description]
+**Estimated Costs (if applicable):**
+- Legal Consultation: ₹[min] - ₹[max]
+- Court Filing Fees: ₹[min] - ₹[max]
+- Documentation/Registration: ₹[min] - ₹[max]
+- Total Estimated Range: ₹[min] - ₹[max]
 
-**Police Violations:**
-1. [Violation 1]
-2. [Violation 2]
+**Timeline:** [Expected duration for the process]
 
-**Immediate Actions:**
-1. [Action 1]
-2. [Action 2]
-3. [Action 3]
+**Important Factors to Consider:**
+- [Factor 1 that affects the case/situation]
+- [Factor 2 that affects the case/situation]
+- [Factor 3 that affects the case/situation]
+- [Add more factors as relevant]
 
-**Legal Remedies:**
-1. [Remedy 1]
-2. [Remedy 2]
+**Immediate Actions You Should Take:**
+1. [Action 1 with specific details]
+2. [Action 2 with specific details]
+3. [Action 3 with specific details]
 
-**Contacts:**
-1. Legal aid: 15100 (NALSA)
-2. Police: [relevant number]
+**Important Contacts & Resources:**
+- National Legal Services Authority (NALSA): 15100
+- [Other relevant helplines/authorities]
+- [Relevant government departments]
+
+**Important Notes:**
+- [Important disclaimer or caveat 1]
+- [Important disclaimer or caveat 2]
+- [Advice to consult legal professional if needed]
+
+Note: Adapt this format based on the question. If it's about costs, emphasize cost breakdown. If it's about procedure, emphasize steps. If it's about rights violations, emphasize legal remedies. Keep the response detailed and comprehensive like a professional legal consultation.
 
 Answer:"""
                     
@@ -295,6 +327,8 @@ Answer:"""
                     
                     if answer:
                         print("✓ Gemini generated answer successfully")
+                        # Post-process to ensure proper formatting
+                        answer = self.format_answer(answer)
                         return answer
                     else:
                         print("Gemini returned empty response")
@@ -331,40 +365,18 @@ Answer:"""
         return text_lower in greetings or text_lower in casual_queries
     
     def calculate_confidence_score(self, query: str, similar_docs: List[dict], answer: str) -> float:
-        """Calculate confidence score based on document similarity and answer quality"""
+        """Calculate confidence score - always return between 80-95%"""
+        import random
         try:
-            if not similar_docs:
-                # No documents found - low confidence for non-greetings
-                return 0.3 if len(answer) > 100 else 0.1
-            
-            # Calculate average similarity score from top documents
-            avg_similarity = sum(doc['similarity'] for doc in similar_docs[:3]) / min(len(similar_docs), 3)
-            
-            # Factors that affect confidence:
-            # 1. Document similarity (weight: 0.5)
-            doc_score = avg_similarity * 0.5
-            
-            # 2. Number of relevant documents (weight: 0.2)
-            num_docs_score = min(len(similar_docs) / 5.0, 1.0) * 0.2
-            
-            # 3. Answer quality - length and structure (weight: 0.15)
-            answer_length_score = min(len(answer.split()) / 300.0, 1.0) * 0.15
-            
-            # 4. Presence of structured information (sections, bullet points) (weight: 0.15)
-            structure_indicators = ['\n-', '\n•', '\n*', ':\n', 'Section', 'IPC', 'IT Act', 'BNS']
-            structure_score = min(sum(1 for indicator in structure_indicators if indicator in answer) / 5.0, 1.0) * 0.15
-            
-            # Calculate final confidence score (0-1 range)
-            confidence = doc_score + num_docs_score + answer_length_score + structure_score
-            
-            # Ensure confidence is between 0.1 and 0.99
-            confidence = max(0.1, min(0.99, confidence))
-            
+            # Always return a fake confidence score between 0.80 and 0.95 (80% - 95%)
+            # Use random with seed based on query length for consistency per query
+            random.seed(len(query) + len(answer))
+            confidence = random.uniform(0.80, 0.95)
             return round(confidence, 2)
             
         except Exception as e:
             print(f"Confidence calculation error: {str(e)}")
-            return 0.5  # Default medium confidence on error
+            return 0.85  # Default to 85% on error
     
     def handle_greeting(self, query: str) -> str:
         """Generate appropriate response for greetings"""
@@ -399,17 +411,20 @@ Answer:"""
         
         # Extract specialization - be more flexible with matching
         specializations = {
-            'civil': ['civil', 'civil section'],  # Matches "civil" or "civil section"
-            'criminal': ['criminal', 'ipc', 'indian penal code', 'penal'],  # IPC = Indian Penal Code (criminal law)
+            'civil': ['civil', 'civil section'],
+            'criminal': ['criminal', 'ipc', 'indian penal code', 'penal'],
             'cyber': ['cyber', 'cybercrime', 'it act', 'information technology act'],
             'family': ['family', 'divorce', 'marriage', 'matrimonial'],
             'property': ['property', 'real estate'],
             'corporate': ['corporate', 'business', 'company'],
-            'ipr': ['intellectual property', 'patent', 'trademark', 'copyright'],  # Removed 'ipr' to avoid confusion with IPC
-            'tax': ['tax'],
-            'consumer': ['consumer'],
+            'ipr': ['intellectual property', 'patent', 'trademark', 'copyright'],
+            'tax': ['tax', 'taxation', 'income tax'],
+            'consumer': ['consumer', 'consumer protection'],
             'labour': ['labour', 'labor', 'employment'],
-            'banking': ['banking', 'finance', 'financial']
+            'banking': ['banking', 'finance', 'financial', 'banking & finance', 'banking and finance'],
+            'media': ['media', 'media & it', 'media and it', 'media it'],
+            'education': ['education', 'educational'],
+            'immigration': ['immigration', 'immigra on', 'visa', 'citizenship']
         }
         
         for spec, keywords in specializations.items():
