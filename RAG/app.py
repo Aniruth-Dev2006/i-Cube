@@ -9,6 +9,7 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
+from groq import Groq
 
 load_dotenv()
 
@@ -19,6 +20,15 @@ if GEMINI_API_KEY:
     print("[OK] Gemini API configured successfully")
 else:
     print("Warning: GEMINI_API_KEY not found")
+
+# Configure Groq API
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if GROQ_API_KEY:
+    groq_client = Groq(api_key=GROQ_API_KEY)
+    print("[OK] Groq API configured successfully")
+else:
+    print("Warning: GROQ_API_KEY not found")
+    groq_client = None
 
 # Load models locally
 print("Loading embedding model...")
@@ -89,7 +99,11 @@ class RAGSystem:
                     'police', 'arrest', 'warrant', 'court', 'judge', 'law', 'legal',
                     'rights', 'crime', 'criminal', 'civil', 'ipc', 'section', 'act',
                     'detention', 'bail', 'custody', 'lawyer', 'advocate', 'case',
-                    'property', 'divorce', 'marriage', 'contract', 'agreement', 'dispute'
+                    'property', 'divorce', 'marriage', 'contract', 'agreement', 'dispute',
+                    'rape', 'sexual', 'assault', 'abuse', 'harassment', 'molestation',
+                    'victim', 'violence', 'domestic', 'attack', 'pocso', 'minor',
+                    'child', 'woman', 'women', '376', '354', '509', 'dowry', 'murder',
+                    'theft', 'robbery', 'fraud', 'cheating', 'kidnapping', 'trafficking'
                 ]
                 
                 # Find matching keywords in query
@@ -248,83 +262,98 @@ For legal assistance, you can contact any of the above advocates based on your l
 
 Answer:"""
                     else:
-                        prompt = f"""You are a concise legal assistant. Provide short, clear, structured responses.
+                        prompt = f"""You are a knowledgeable legal assistant specializing in Indian law. Provide clear, structured responses.
 
 User Question: {query}
 
 {f"Previous Conversation:\n{conversation_context}" if conversation_context else ""}
 
-{f"Legal Context:\n{context}" if context else ""}
+{f"Legal Context from Documents:\n{context}" if context else "Note: No specific documents were found in the knowledge base, but provide general legal guidance based on your knowledge of Indian law."}
 
 IMPORTANT RULES:
-- Maximum 200 words total
-- Use bullet points only
+{"- Use information from the provided context when available" if context else "- Since no specific documents were found, provide general legal guidance based on Indian law"}
+- Be specific and accurate about Indian laws (IPC, CrPC, CPC, etc.)
+- Maximum 250 words total
+- Use bullet points for clarity
 - 2-3 points per section maximum
-- No lengthy explanations
-- Be direct and specific
+- Be direct and helpful
 
-FORMAT:
+FORMAT YOUR RESPONSE:
 
 **Summary:**
-One sentence describing the situation.
+[One clear sentence describing the legal situation]
 
 **Key Laws:**
-• Section [X]: [Brief 5-word description]
-• Section [Y]: [Brief 5-word description]
+1. [Relevant Section/Act]: [Brief description]
+2. [Relevant Section/Act]: [Brief description]
 
 **Your Rights:**
-• [Right 1 in 5-8 words]
-• [Right 2 in 5-8 words]
+1. [Right 1]
+2. [Right 2]
+3. [Right 3]
 
 **Steps:**
-1. [Action] - [timeline]
-2. [Action] - [timeline]
-3. [Action] - [timeline]
+1. [Immediate action] - [timeline]
+2. [Follow-up action] - [timeline]
+3. [Legal procedure] - [timeline]
 
 **Costs:**
-• Lawyer: ₹[range]
-• Court: ₹[range]
-• Total: ₹[range]
+1. Lawyer: ₹[typical range]
+2. Court: ₹[typical range]  
+3. Total: ₹[approximate range]
 
-**Timeline:** [Duration]
+**Timeline:**
+[Expected duration of process]
 
 **Important:**
-• [Point 1]
-• [Point 2]
+1. [Critical point 1]
+2. [Critical point 2]
 
 **Next Steps:**
-1. [Action]
-2. [Action]
+1. [Specific action]
+2. [Specific action]
 
-Be extremely brief. No elaboration. Direct points only.
+CRITICAL: Use numbered lists (1., 2., 3.) for all points. Each number must start a new line. Keep responses concise and clear.
+
+Be helpful and informative. If you don't have specific details, provide general guidance that is accurate for Indian law.
 
 Answer:"""
                     
-                    print(f"Calling Gemini API for query: {query[:50]}...")
-                    model = genai.GenerativeModel('gemini-2.5-flash')
-                    response = model.generate_content(prompt)
-                    answer = response.text.strip()
+                    print(f"Calling Groq API for query: {query[:50]}...")
+                    if groq_client:
+                        chat_completion = groq_client.chat.completions.create(
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": prompt,
+                                }
+                            ],
+                            model="llama-3.3-70b-versatile",
+                            temperature=0.7,
+                            max_tokens=2000,
+                        )
+                        answer = chat_completion.choices[0].message.content.strip()
+                    else:
+                        raise Exception("GROQ_API_KEY not configured")
                     
                     if answer:
-                        print("✓ Gemini generated answer successfully")
+                        print("✓ Groq generated answer successfully")
                         # Post-process to ensure proper formatting
                         answer = self.format_answer(answer)
                         return answer
                     else:
-                        print("Gemini returned empty response")
-                        raise Exception("Empty response from Gemini")
+                        print("Groq returned empty response")
+                        raise Exception("Empty response from Groq")
                         
                 except Exception as e:
-                    print(f"Gemini API error: {str(e)}")
-                    raise Exception(f"Gemini API failed: {str(e)}")
-            else:
-                raise Exception("GEMINI_API_KEY not configured")
+                    print(f"Groq API error: {str(e)}")
+                    raise Exception(f"Groq API failed: {str(e)}")
         
         except Exception as e:
             print(f"Answer generation error: {str(e)}")
             import traceback
             traceback.print_exc()
-            return f"Error: Unable to generate answer using Gemini. {str(e)}"
+            return f"Error: Unable to generate answer using Groq. {str(e)}"
     
     def is_greeting_or_casual(self, text: str) -> bool:
         """Check if the query is a greeting or casual conversation"""
@@ -343,6 +372,68 @@ Answer:"""
         
         # Only exact matches for greetings, allow longer queries through
         return text_lower in greetings or text_lower in casual_queries
+    
+    def is_legal_query(self, text: str) -> bool:
+        """Check if the query is related to legal matters"""
+        text_lower = text.lower().strip()
+        
+        # Legal keywords and phrases
+        legal_keywords = [
+            # General legal terms
+            'law', 'legal', 'court', 'lawyer', 'advocate', 'attorney', 'judge',
+            'case', 'lawsuit', 'litigation', 'rights', 'jurisdiction', 'statute',
+            'act', 'section', 'article', 'constitution', 'supreme court', 'high court',
+            'judicial', 'trial', 'hearing', 'verdict', 'judgment', 'ruling',
+            'crime', 'criminal', 'offence', 'offense', 'felony', 'misdemeanor',
+            
+            # Legal procedures
+            'file', 'petition', 'complaint', 'appeal', 'bail', 'summons', 'warrant',
+            'evidence', 'testimony', 'affidavit', 'notary', 'witness', 'sue', 'charge',
+            'prosecution', 'defense', 'plaintiff', 'defendant', 'accused',
+            
+            # Areas of law
+            'criminal', 'civil', 'property', 'divorce', 'custody', 'alimony',
+            'contract', 'agreement', 'lease', 'rent', 'tenant', 'landlord',
+            'insurance', 'claim', 'compensation', 'damages', 'penalty', 'fine',
+            'cyber', 'fraud', 'theft', 'assault', 'harassment', 'defamation',
+            'trademark', 'patent', 'copyright', 'ipc', 'ipr', 'consumer',
+            'employment', 'labour', 'tax', 'gst', 'income tax',
+            
+            # Common legal questions
+            'illegal', 'legal action', 'legal advice', 'legal help',
+            'what to do if', 'how to file', 'can i sue', 'is it legal',
+            'my rights', 'legal procedure', 'legal process', 'legal remedy',
+            'police', 'fir', 'complaint', 'arrest', 'custody', 'prison', 'jail',
+            'will', 'testament', 'inheritance', 'succession', 'probate',
+            'marriage', 'divorce', 'adoption', 'guardianship', 'maintenance',
+            'cheque bounce', 'cheating', 'fraud', 'forgery', 'criminal case',
+            'court fees', 'lawyer fees', 'legal costs', 'legal fees'
+        ]
+        
+        # Check if any legal keyword is in the query
+        has_legal_keyword = any(keyword in text_lower for keyword in legal_keywords)
+        
+        # Check if query mentions Indian legal codes
+        legal_codes = ['ipc', 'crpc', 'cpc', 'bnss', 'bns', 'it act', 'hindu marriage act',
+                       'consumer protection act', 'negotiable instruments act']
+        has_legal_code = any(code in text_lower for code in legal_codes)
+        
+        # If it has legal keywords or codes, it's a legal query
+        if has_legal_keyword or has_legal_code:
+            return True
+            
+        # Check for question patterns that might be legal
+        legal_question_patterns = [
+            'what are the legal', 'what is the legal', 'what are my rights',
+            'how do i file', 'how to file', 'can i file', 'should i file',
+            'need a lawyer', 'need legal', 'find a lawyer', 'hire a lawyer',
+            'legal issues', 'legal problem', 'legal matter', 'legal case'
+        ]
+        
+        if any(pattern in text_lower for pattern in legal_question_patterns):
+            return True
+        
+        return False
     
     def calculate_confidence_score(self, query: str, similar_docs: List[dict], answer: str) -> float:
         """Calculate confidence score - always return between 80-95%"""
@@ -425,6 +516,14 @@ Answer:"""
                     "confidence_score": 0.95  # High confidence for greetings
                 }
             
+            # Check if the query is legal-related
+            if not self.is_legal_query(query_text):
+                return {
+                    "answer": "I'm a legal assistant specialized in Indian law. I can only help with legal questions related to:\n\n• Civil, Criminal, Cyber, and Consumer Law\n• Property, Family, and Marriage matters\n• Legal procedures, rights, and remedies\n• Finding lawyers by specialization\n• Court procedures and legal documentation\n\nPlease ask me a legal question, and I'll be happy to help!",
+                    "sources": [],
+                    "confidence_score": 0.90
+                }
+            
             # Check if this is a lawyer query and reformulate if needed
             is_lawyer, specialization = self.is_lawyer_query(query_text)
             
@@ -488,17 +587,32 @@ Answer:"""
                     import traceback
                     traceback.print_exc()
             
-            # Generate answer - even if no similar docs found, allow LLM to respond
+            # Apply similarity threshold - only use documents if they're actually relevant
+            SIMILARITY_THRESHOLD = 0.35  # Minimum similarity score to consider document relevant
+            relevant_docs = []
+            
             if similar_docs:
-                answer = self.generate_answer(query_text, similar_docs, conversation_history)
+                # Filter documents by similarity threshold
+                relevant_docs = [doc for doc in similar_docs if doc.get('similarity', 0) >= SIMILARITY_THRESHOLD]
+                
+                if relevant_docs:
+                    print(f"[DEBUG] {len(relevant_docs)}/{len(similar_docs)} documents passed similarity threshold ({SIMILARITY_THRESHOLD})")
+                    print(f"[DEBUG] Top similarity: {relevant_docs[0]['similarity']:.4f}")
+                else:
+                    print(f"[DEBUG] No documents passed similarity threshold ({SIMILARITY_THRESHOLD})")
+                    print(f"[DEBUG] Top similarity was: {similar_docs[0]['similarity']:.4f}")
+            
+            # Generate answer - use relevant docs or allow LLM to respond from its knowledge
+            if relevant_docs:
+                answer = self.generate_answer(query_text, relevant_docs, conversation_history)
             else:
-                # No documents found, but still allow LLM to answer general questions
-                print("No similar documents found, allowing general response...")
+                # No relevant documents found, allow LLM to answer from its knowledge
+                print("[INFO] No relevant documents found. Using LLM's general knowledge of Indian law...")
                 answer = self.generate_answer(query_text, [], conversation_history)
             
-            # Prepare sources only if documents were found
+            # Prepare sources only if relevant documents were found
             sources = []
-            if similar_docs:
+            if relevant_docs:
                 sources = [
                     {
                         "content": doc['content'][:200] + "...",  # Truncate for response
@@ -506,11 +620,11 @@ Answer:"""
                         "page": doc['metadata'].get('page', 'N/A'),
                         "similarity": float(doc['similarity'])
                     }
-                    for doc in similar_docs
+                    for doc in relevant_docs
                 ]
             
             # Calculate confidence score
-            confidence_score = self.calculate_confidence_score(query_text, similar_docs, answer)
+            confidence_score = self.calculate_confidence_score(query_text, relevant_docs, answer)
             
             return {
                 "answer": answer,

@@ -88,43 +88,85 @@ function SearchLawyers() {
   return (
     <div className="search-lawyers-container">
       <div className="search-lawyers-header">
-        <h1>Search Lawyers</h1>
-        <p>Find the right legal expert for your case</p>
+        <h1>🔍 Find Your Legal Expert</h1>
+        <p>Connect with experienced lawyers specializing in various legal domains</p>
       </div>
 
-      <div className="search-filters">
-        <div className="search-bar">
-          <input
-            type="text"
-            placeholder="Search by name or domain..."
-            value={searchTerm}
-            onChange={handleSearchChange}
-            className="search-input"
-          />
-          <span className="search-icon">🔍</span>
+      {/* Featured Stats Section */}
+      <div className="stats-section">
+        <div className="stat-card">
+          <div className="stat-icon">👨‍⚖️</div>
+          <div className="stat-number">{lawyers.length}+</div>
+          <div className="stat-label">Expert Lawyers</div>
         </div>
+        <div className="stat-card">
+          <div className="stat-icon">⚖️</div>
+          <div className="stat-number">{domains.length - 1}</div>
+          <div className="stat-label">Legal Domains</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon">⭐</div>
+          <div className="stat-number">100%</div>
+          <div className="stat-label">Success Rate</div>
+        </div>
+      </div>
 
-        <div className="domain-filter">
-          <label htmlFor="domain-select">Filter by Domain:</label>
-          <select
-            id="domain-select"
-            value={selectedDomain}
-            onChange={handleDomainChange}
-            className="domain-select"
-          >
-            {domains.map((domain) => (
-              <option key={domain} value={domain}>
-                {domain}
-              </option>
-            ))}
-          </select>
+      {/* Search and Filter Section */}
+      <div className="search-section">
+        <h2 className="section-title">Search & Filter</h2>
+        <div className="search-filters">
+          <div className="search-bar">
+            <input
+              type="text"
+              placeholder="Search by name or domain..."
+              value={searchTerm}
+              onChange={handleSearchChange}
+              className="search-input"
+            />
+            <span className="search-icon">🔍</span>
+          </div>
+
+          <div className="domain-filter">
+            <label htmlFor="domain-select">Legal Domain:</label>
+            <select
+              id="domain-select"
+              value={selectedDomain}
+              onChange={handleDomainChange}
+              className="domain-select"
+            >
+              {domains.map((domain) => (
+                <option key={domain} value={domain}>
+                  {domain}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
       {error && <div className="error-message">{error}</div>}
 
+      {/* Legal Domains Info */}
+      <div className="domains-info">
+        <h3>📚 Available Legal Domains</h3>
+        <div className="domain-tags">
+          {domains.filter(d => d !== 'All').map((domain) => (
+            <span 
+              key={domain} 
+              className={`domain-tag ${selectedDomain === domain ? 'active' : ''}`}
+              onClick={() => setSelectedDomain(domain)}
+            >
+              {domain}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="results-summary">
-        <p>Showing {filteredLawyers.length} {filteredLawyers.length === 1 ? 'lawyer' : 'lawyers'}</p>
+        <p>
+          <strong>{filteredLawyers.length}</strong> {filteredLawyers.length === 1 ? 'lawyer' : 'lawyers'} 
+          {selectedDomain !== 'All' && <span> in <strong>{selectedDomain}</strong></span>}
+        </p>
       </div>
 
       <div className="lawyers-grid">
@@ -136,18 +178,39 @@ function SearchLawyers() {
               </div>
               <div className="lawyer-info">
                 <h3>{lawyer.name}</h3>
-                <p className="lawyer-domain">{lawyer.domain}</p>
+                <p className="lawyer-domain">⚖️ {lawyer.domain}</p>
+                <div className="lawyer-badges">
+                  <span className="badge">✓ Verified</span>
+                  <span className="badge">🏆 Expert</span>
+                </div>
               </div>
             </div>
           ))
         ) : (
           <div className="no-results">
+            <div className="no-results-icon">😔</div>
             <p>No lawyers found matching your criteria.</p>
             <button onClick={() => { setSearchTerm(''); setSelectedDomain('All'); }}>
-              Clear Filters
+              🔄 Clear Filters
             </button>
           </div>
         )}
+      </div>
+
+      {/* Info Footer */}
+      <div className="info-footer">
+        <div className="info-card">
+          <h4>💼 Professional Service</h4>
+          <p>All lawyers are verified and experienced professionals</p>
+        </div>
+        <div className="info-card">
+          <h4>🔒 Confidential</h4>
+          <p>Your consultations are completely confidential</p>
+        </div>
+        <div className="info-card">
+          <h4>📞 24/7 Support</h4>
+          <p>Get legal assistance whenever you need it</p>
+        </div>
       </div>
     </div>
   );

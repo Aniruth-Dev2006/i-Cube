@@ -2,6 +2,19 @@ import { useState } from 'react';
 import axios from 'axios';
 import './CostEstimation.css';
 
+// Function to render markdown text with bold formatting
+function renderMarkdownText(text) {
+  if (!text) return text;
+  
+  const parts = text.split('**');
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return <strong key={index}>{part}</strong>;
+    }
+    return part;
+  });
+}
+
 function CostEstimation({ onClose }) {
   const [formData, setFormData] = useState({
     scenario: '',
@@ -169,7 +182,35 @@ function CostEstimation({ onClose }) {
             </div>
 
             <div className="result-content">
-              {result.estimate}
+              {result.estimate.split('\n').map((line, index) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return null;
+                
+                // Check if line is a heading
+                if (trimmedLine.startsWith('**') && trimmedLine.endsWith(':**')) {
+                  return (
+                    <h4 key={index} className="cost-heading">
+                      {renderMarkdownText(trimmedLine)}
+                    </h4>
+                  );
+                }
+                
+                // Check if line is a numbered item
+                if (trimmedLine.match(/^\d+\.\s/)) {
+                  return (
+                    <div key={index} className="cost-list-item">
+                      {renderMarkdownText(trimmedLine)}
+                    </div>
+                  );
+                }
+                
+                // Regular paragraph
+                return (
+                  <p key={index} className="cost-paragraph">
+                    {renderMarkdownText(trimmedLine)}
+                  </p>
+                );
+              })}
             </div>
 
             <div className="result-disclaimer">

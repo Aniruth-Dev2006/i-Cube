@@ -59,13 +59,19 @@ Provide a comprehensive cost estimation for this legal case in Indian Rupees (IN
 **Timeline:** [Expected duration]
 
 **Cost Factors:**
-- [Factor 1 affecting cost]
-- [Factor 2 affecting cost]
-- [Factor 3 affecting cost]
+1. [Factor 1 affecting cost]
+2. [Factor 2 affecting cost]
+3. [Factor 3 affecting cost]
 
 **Important Notes:**
-- [Note about variations based on specific circumstances]
-- [Note about additional factors that may increase/decrease costs]
+1. [Note about variations based on specific circumstances]
+2. [Note about additional factors that may increase/decrease costs]
+
+CRITICAL FORMATTING: 
+- Use numbered lists (1., 2., 3.) for main points under sections like "Cost Factors" and "Important Notes"
+- Each item with a dash (-) must be on its own separate line
+- Never combine multiple items on one line
+- Each numbered item must start on a new line
 
 Base your estimates on current Indian legal market rates for ${location || 'major Indian cities'}, considering ${complexity} complexity level and ${caseType} law practices.`;
 

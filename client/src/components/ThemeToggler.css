@@ -5,21 +5,22 @@
   width: 50px;
   height: 50px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #7c3aed;
   border: none;
   font-size: 24px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
   transition: all 0.3s ease;
   z-index: 1000;
 }
 
 .theme-toggler:hover {
+  background: #6d28d9;
   transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.4);
 }
 
 .theme-toggler:active {
@@ -27,7 +28,14 @@
 }
 
 [data-theme="dark"] .theme-toggler {
-  background: linear-gradient(135deg, #434343 0%, #000000 100%);
+  background: rgba(124, 58, 237, 0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.5);
+}
+
+[data-theme="dark"] .theme-toggler:hover {
+  background: #8b5cf6;
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.6);
 }
 
 /* Responsive Design */

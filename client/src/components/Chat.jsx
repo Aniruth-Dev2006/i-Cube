@@ -1,65 +1,131 @@
 import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
+import * as pdfjsLib from 'pdfjs-dist';
 import './Chat.css';
+
+// Set up PDF.js worker for Vite
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url
+).href;
 
 // Function to structure and format bot responses
 function formatBotResponse(content) {
-  if (!content) return null;
+  if (!content) return [{ type: 'paragraph', content: ['No content available'] }];
 
-  // Check if content is already an object (structured)
-  if (typeof content === 'object') {
+  // Check if content is already an array (structured)
+  if (Array.isArray(content)) {
     return content;
   }
+  
+  // Check if content is already an object (structured)
+  if (typeof content === 'object') {
+    return [{ type: 'paragraph', content: [String(content)] }];
+  }
+
+  // Convert to string if needed
+  const textContent = typeof content === 'string' ? content : String(content);
+
+  // Pre-process: Split inline bullets into separate lines
+  // Replace ". •" pattern (period, space, bullet)
+  let processedContent = textContent.replace(/\.\s*•/g, '.\n•');
+  // Replace " • " pattern (space, bullet, space) - but not at start
+  processedContent = processedContent.replace(/([^\n])\s+•\s+/g, '$1\n• ');
+  
+  console.log('Original content:', textContent);
+  console.log('Processed content:', processedContent);
 
   // Parse the text content into structured sections
   const sections = [];
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = processedContent.split('\n').map(line => line.trim()).filter(line => line);
   
   let currentSection = { type: 'paragraph', content: [] };
   let inList = false;
   
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = lines[i];
     
     // Skip empty lines
     if (!line) continue;
     
-    // Detect headings (lines with ** markers)
-    if (line.startsWith('**') && line.endsWith(':**')) {
+    // Detect headings - lines with ** markers at start and end
+    if (line.startsWith('**') && line.includes(':**')) {
+      // Save current section if it has content
       if (currentSection.content.length > 0 || currentSection.items?.length > 0) {
         sections.push({ ...currentSection });
       }
-      sections.push({ type: 'heading', content: line.replace(/\*\*/g, '').replace(':', '') });
+      // Extract heading text and clean it
+      const headingText = line.replace(/^\*\*/, '').replace(/:\*\*$/, '').replace(/\*\*:/, '').trim();
+      currentSection = { type: 'heading', content: headingText };
+      sections.push({ ...currentSection });
       currentSection = { type: 'paragraph', content: [] };
       inList = false;
       continue;
     }
     
-    // Detect bullet points (• or -)
-    if (line.match(/^[•\-]\s/)) {
-      if (!inList) {
-        if (currentSection.content.length > 0) {
+    // Detect bullet points with • character (including inline bullets)
+    if (line.startsWith('•') || line.match(/^[•]\s+/) || line.includes(' • ')) {
+      if (!inList || currentSection.type !== 'list') {
+        if (currentSection.content.length > 0 || currentSection.items?.length > 0) {
           sections.push({ ...currentSection });
         }
         currentSection = { type: 'list', items: [] };
         inList = true;
       }
-      const cleanLine = line.replace(/^[•\-]\s*/, '');
+      
+      // Split by bullet points if there are multiple on one line
+      console.log('Original line with bullets:', line);
+      const bulletItems = line.split(/\s*•\s*/).filter(item => item.trim());
+      console.log('Split into items:', bulletItems);
+      bulletItems.forEach(item => {
+        const cleanItem = item.trim();
+        if (cleanItem) {
+          console.log('Adding bullet item:', cleanItem);
+          currentSection.items.push(cleanItem);
+        }
+      });
+      continue;
+    }
+    
+    // Detect bullet points with * at start
+    if (line.match(/^\*\s+/) && !line.startsWith('**')) {
+      if (!inList || currentSection.type !== 'list') {
+        if (currentSection.content.length > 0 || currentSection.items?.length > 0) {
+          sections.push({ ...currentSection });
+        }
+        currentSection = { type: 'list', items: [] };
+        inList = true;
+      }
+      const cleanLine = line.replace(/^\*\s+/, '').trim();
+      currentSection.items.push(cleanLine);
+      continue;
+    }
+    
+    // Detect bullet points with -
+    if (line.match(/^-\s+/)) {
+      if (!inList || currentSection.type !== 'list') {
+        if (currentSection.content.length > 0 || currentSection.items?.length > 0) {
+          sections.push({ ...currentSection });
+        }
+        currentSection = { type: 'list', items: [] };
+        inList = true;
+      }
+      const cleanLine = line.replace(/^-\s+/, '').trim();
       currentSection.items.push(cleanLine);
       continue;
     }
     
     // Detect numbered lists
-    if (line.match(/^\d+\.\s/)) {
-      if (!inList) {
-        if (currentSection.content.length > 0) {
+    if (line.match(/^\d+\.\s+/)) {
+      if (!inList || currentSection.type !== 'numbered-list') {
+        if (currentSection.content.length > 0 || currentSection.items?.length > 0) {
           sections.push({ ...currentSection });
         }
         currentSection = { type: 'numbered-list', items: [] };
         inList = true;
       }
-      const cleanLine = line.replace(/^\d+\.\s*/, '');
+      const cleanLine = line.replace(/^\d+\.\s+/, '').trim();
       currentSection.items.push(cleanLine);
       continue;
     }
@@ -78,29 +144,77 @@ function formatBotResponse(content) {
     sections.push(currentSection);
   }
   
+  // Ensure we always return at least something
+  if (sections.length === 0) {
+    return [{ type: 'paragraph', content: [textContent] }];
+  }
+  
   return sections;
+}
+
+// Function to render text with markdown bold syntax (**text**)
+function renderMarkdownText(text) {
+  if (!text || typeof text !== 'string') return text;
+  
+  // Split by ** markers and process
+  const parts = text.split('**');
+  
+  return parts.map((part, index) => {
+    // Every odd index (1, 3, 5...) should be bolded
+    if (index % 2 === 1 && part.length > 0) {
+      return <strong key={index}>{part}</strong>;
+    }
+    return <span key={index}>{part}</span>;
+  });
 }
 
 // Component to render structured message
 function StructuredMessage({ sections, confidence_score }) {
-  if (!sections || sections.length === 0) {
-    return <div>No response available</div>;
-  }
-
   // If sections is a string, format it first
   if (typeof sections === 'string') {
+    console.log('Formatting string response:', sections.substring(0, 100));
     try {
-      sections = formatBotResponse(sections);
+      const formatted = formatBotResponse(sections);
+      console.log('Formatted sections:', formatted);
+      sections = formatted;
     } catch (error) {
       console.error('Error formatting response:', error);
-      return <div>{sections}</div>;
+      // Return pre-formatted text as fallback with markdown support
+      return (
+        <div className="structured-response">
+          <div style={{ whiteSpace: 'pre-line' }}>
+            {renderMarkdownText(sections)}
+          </div>
+          {confidence_score && (
+            <div className="confidence-badge" style={{
+              marginTop: '12px',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '0.85em',
+              display: 'inline-block',
+              backgroundColor: confidence_score >= 0.7 ? '#4CAF50' : confidence_score >= 0.5 ? '#FF9800' : '#f44336',
+              color: 'white',
+              fontWeight: '500'
+            }}>
+              ✓ Confidence: {(confidence_score * 100).toFixed(0)}%
+            </div>
+          )}
+        </div>
+      );
     }
   }
 
-  // If sections is still invalid, show the raw content
-  if (!Array.isArray(sections)) {
-    return <div>{String(sections)}</div>;
+  // Check if formatting produced valid sections
+  if (!sections || !Array.isArray(sections) || sections.length === 0) {
+    console.log('Invalid sections:', sections);
+    return (
+      <div className="structured-response">
+        <div>No response available</div>
+      </div>
+    );
   }
+
+  console.log('Rendering', sections.length, 'sections');
 
   return (
     <div className="structured-response">
@@ -109,7 +223,7 @@ function StructuredMessage({ sections, confidence_score }) {
           if (section.type === 'heading') {
             return (
               <h4 key={index} className="response-heading">
-                {section.content}
+                {renderMarkdownText(section.content)}
               </h4>
             );
           }
@@ -118,16 +232,17 @@ function StructuredMessage({ sections, confidence_score }) {
             return (
               <ul key={index} className={section.type === 'numbered-list' ? 'numbered-list' : 'bullet-list'}>
                 {(section.items || []).map((item, idx) => (
-                  <li key={idx}>{item}</li>
+                  <li key={idx}>{renderMarkdownText(item)}</li>
                 ))}
               </ul>
             );
           }
           
           if (section.type === 'paragraph') {
+            const content = Array.isArray(section.content) ? section.content.join(' ') : section.content;
             return (
               <p key={index} className="response-paragraph">
-                {Array.isArray(section.content) ? section.content.join(' ') : section.content}
+                {renderMarkdownText(content)}
               </p>
             );
           }
@@ -162,7 +277,11 @@ function Chat({ onClose, selectedBot = null }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [extractedText, setExtractedText] = useState('');
+  const [processingFile, setProcessingFile] = useState(false);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // N8N webhook endpoints for specialized bots
   const botWebhooks = {
@@ -327,6 +446,91 @@ function Chat({ onClose, selectedBot = null }) {
     scrollToBottom();
   }, [messages]);
 
+  // Function to extract text from PDF
+  const extractTextFromPDF = async (file) => {
+    try {
+      console.log('Starting PDF extraction for:', file.name);
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('ArrayBuffer created, size:', arrayBuffer.byteLength);
+      
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      console.log('PDF loaded, pages:', pdf.numPages);
+      
+      let fullText = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n\n';
+      }
+
+      console.log('Extraction complete, text length:', fullText.length);
+      return fullText.trim();
+    } catch (error) {
+      console.error('Error extracting PDF text:', error);
+      throw new Error(`Failed to extract text from PDF: ${error.message}`);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    const pdfFiles = files.filter(file => file.type === 'application/pdf');
+
+    if (pdfFiles.length === 0) {
+      setError('Please upload only PDF files');
+      return;
+    }
+
+    setError('');
+    setProcessingFile(true);
+
+    try {
+      let allText = '';
+
+      for (const file of pdfFiles) {
+        console.log('Processing file:', file.name, 'Type:', file.type, 'Size:', file.size);
+        const text = await extractTextFromPDF(file);
+        allText += `\n\n--- Content from ${file.name} ---\n\n${text}`;
+      }
+
+      setExtractedText(prevText => prevText + allText);
+      setUploadedFiles(prev => [...prev, ...pdfFiles]);
+      
+      // Show success message
+      const successMsg = `✅ Successfully extracted text from ${pdfFiles.length} PDF file(s). Total characters: ${allText.length}`;
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        type: 'system',
+        content: successMsg
+      }]);
+      
+      console.log('PDF extraction successful. Total text length:', allText.length);
+    } catch (err) {
+      console.error('File processing error:', err);
+      setError(`Failed to process PDF: ${err.message}. Please ensure the PDF is valid and not password-protected.`);
+    } finally {
+      setProcessingFile(false);
+      // Clear the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Remove uploaded file
+  const removeFile = (index) => {
+    const newFiles = [...uploadedFiles];
+    newFiles.splice(index, 1);
+    setUploadedFiles(newFiles);
+    
+    if (newFiles.length === 0) {
+      setExtractedText('');
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
@@ -344,26 +548,38 @@ function Chat({ onClose, selectedBot = null }) {
     try {
       let botMessage;
 
+      // Combine user input with extracted PDF text
+      let fullQuery = userMessage.content;
+      if (extractedText && extractedText.trim()) {
+        fullQuery = `Based on the following document context, please answer the question.\n\n--- DOCUMENT CONTEXT ---\n${extractedText.substring(0, 4000)}\n--- END CONTEXT ---\n\nQuestion: ${userMessage.content}\n\nPlease provide a structured response with clear sections and bullet points where appropriate.`;
+      }
+
       // If a specialized bot is selected, use n8n webhook
       if (selectedBot && botWebhooks[selectedBot]) {
         const webhookUrl = botWebhooks[selectedBot];
         
         const response = await axios.post(webhookUrl, {
-          question: userMessage.content
+          question: fullQuery
         });
 
         // Generate fake confidence score between 80-95%
         const confidenceScore = (Math.random() * 0.15 + 0.80).toFixed(2);
 
-        const responseContent = response.data?.output || response.data?.response || response.data?.answer || 'No response received';
-
+        let responseContent = response.data?.output || response.data?.response || response.data?.answer || 'No response received';
+        
+        console.log('Webhook response:', responseContent);
+        
+        // Ensure response is formatted - keep as string to let StructuredMessage handle it
+        // Don't format here as it might return null/undefined
         botMessage = {
           id: Date.now() + 1,
           type: 'bot',
-          content: responseContent,
+          content: responseContent || 'No response received',
           sources: [],
           confidence_score: parseFloat(confidenceScore)
         };
+        
+        console.log('Bot message created:', botMessage);
       } else {
         // Use regular RAG endpoint
         const conversationHistory = messages.map(msg => ({
@@ -372,7 +588,7 @@ function Chat({ onClose, selectedBot = null }) {
         }));
 
         const response = await axios.post('http://localhost:3000/rag/query', {
-          query: userMessage.content,
+          query: fullQuery,
           conversation_history: conversationHistory,
           max_results: 5
         });
@@ -443,23 +659,43 @@ function Chat({ onClose, selectedBot = null }) {
               <div className="empty-chat-icon">💬</div>
               <h3>Start a Conversation</h3>
               <p>Ask me anything about Indian law including civil, criminal, cyber, consumer, family, property law and more</p>
+              <div className="feature-highlights">
+                <div className="feature-item">
+                  <span className="feature-icon">📄</span>
+                  <span>Upload PDF documents</span>
+                </div>
+                <div className="feature-item">
+                  <span className="feature-icon">🤖</span>
+                  <span>AI-powered legal advice</span>
+                </div>
+                <div className="feature-item">
+                  <span className="feature-icon">⚡</span>
+                  <span>Instant responses</span>
+                </div>
+              </div>
             </div>
           ) : (
             messages.map((message) => (
               <div key={message.id} className={`message ${message.type}`}>
-                <div className="message-avatar">
-                  {message.type === 'user' ? '👤' : '🤖'}
-                </div>
-                <div className="message-content">
-                  {message.type === 'bot' ? (
-                    <StructuredMessage 
-                      sections={message.content} 
-                      confidence_score={message.confidence_score}
-                    />
-                  ) : (
-                    message.content
-                  )}
-                </div>
+                {message.type === 'system' ? (
+                  <div className="system-message">{message.content}</div>
+                ) : (
+                  <>
+                    <div className="message-avatar">
+                      {message.type === 'user' ? '👤' : '🤖'}
+                    </div>
+                    <div className="message-content">
+                      {message.type === 'bot' ? (
+                        <StructuredMessage 
+                          sections={message.content} 
+                          confidence_score={message.confidence_score}
+                        />
+                      ) : (
+                        message.content
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             ))
           )}
@@ -485,14 +721,55 @@ function Chat({ onClose, selectedBot = null }) {
         </div>
 
         <div className="chat-input-container">
+          {/* File upload section */}
+          {uploadedFiles.length > 0 && (
+            <div className="uploaded-files-section">
+              <div className="uploaded-files-header">
+                <span className="files-title">📎 Attached Documents ({uploadedFiles.length})</span>
+              </div>
+              <div className="uploaded-files-list">
+                {uploadedFiles.map((file, index) => (
+                  <div key={index} className="uploaded-file-item">
+                    <span className="file-icon">📄</span>
+                    <span className="file-name">{file.name}</span>
+                    <span className="file-size">({(file.size / 1024).toFixed(1)} KB)</span>
+                    <button
+                      className="remove-file-btn"
+                      onClick={() => removeFile(index)}
+                      title="Remove file"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="chat-input-wrapper">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="application/pdf"
+              multiple
+              style={{ display: 'none' }}
+            />
+            <button
+              className="upload-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={processingFile || loading}
+              title="Upload PDF documents"
+            >
+              {processingFile ? '⏳' : '📎'}
+            </button>
             <textarea
               className="chat-input"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask about any area of Indian law - civil, criminal, cyber, consumer, family, property..."
-              rows={1}
+              placeholder="Type your legal question here... (You can also upload PDF documents)"
+              rows={3}
               disabled={loading}
             />
             <button
@@ -500,9 +777,14 @@ function Chat({ onClose, selectedBot = null }) {
               onClick={handleSend}
               disabled={!input.trim() || loading}
             >
-              ➤
+              {loading ? '⏳' : '➤'}
             </button>
           </div>
+          {processingFile && (
+            <div className="processing-indicator">
+              <span className="spinner">⏳</span> Processing PDF files...
+            </div>
+          )}
         </div>
       </div>
     </div>
