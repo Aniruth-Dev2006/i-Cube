@@ -7,6 +7,8 @@ import Chat from './Chat';
 import CostEstimation from './CostEstimation';
 import './Dashboard.css';
 
+const API_URL = 'http://localhost:3000';
+
 function Dashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,7 @@ function Dashboard() {
           <div className="profile-info">
             <div className="user-avatar">
               {user?.picture ? (
-                <img src={user.picture} alt={user.name} />
+                <img src={user.picture.startsWith('http') ? user.picture : `${API_URL}${user.picture}`} alt={user.name} />
               ) : (
                 <div className="avatar-placeholder">
                   {user?.name?.charAt(0).toUpperCase()}
@@ -114,14 +116,14 @@ function Dashboard() {
             <div className="card-icon">🚨</div>
             <h3>Cyber Complaint Registration</h3>
             <p>File cyber crime complaints online</p>
-            <button className="btn-card">Register Complaint</button>
+            <button className="btn-card" onClick={() => navigate('/cyber-complaint')}>Register Complaint</button>
           </div>
 
           <div className="dashboard-card">
             <div className="card-icon">🔍</div>
             <h3>Search for Lawyers</h3>
             <p>Find and connect with verified legal professionals</p>
-            <button className="btn-card">Search Lawyers</button>
+            <button className="btn-card" onClick={() => navigate('/search-lawyers')}>Search Lawyers</button>
           </div>
 
           <div className="dashboard-card specialized-card">

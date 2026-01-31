@@ -3,7 +3,10 @@ const router = express.Router();
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Initialize Gemini API
-const genAI = new GoogleGenerativeAI('AIzaSyCgz39Tj5jKTi3BVcVlwxq-CseEd9_jDVY');
+if (!process.env.GEMINI_API_KEY) {
+  console.error('⚠️  GEMINI_API_KEY is not set in environment variables');
+}
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 router.post('/cost-estimate', async (req, res) => {
   try {

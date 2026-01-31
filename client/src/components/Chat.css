@@ -42,6 +42,36 @@
   gap: 10px;
 }
 
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-download-btn {
+  background: #ffffff;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  color: #667eea;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+
+.chat-download-btn:hover {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
 .chat-close {
   background: rgba(255, 255, 255, 0.2);
   border: none;
@@ -302,6 +332,94 @@ body.dark .message-content {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+/* Structured Response Styles */
+.structured-response {
+  width: 100%;
+}
+
+.response-heading {
+  margin: 12px 0 8px 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
+  padding-bottom: 4px;
+}
+
+.message.bot .response-heading {
+  color: #667eea;
+}
+
+[data-theme="dark"] .message.bot .response-heading {
+  color: #8b9aff;
+}
+
+.response-paragraph {
+  margin: 8px 0;
+  line-height: 1.7;
+  text-align: justify;
+  color: var(--text-color);
+}
+
+.bullet-list,
+.numbered-list {
+  margin: 10px 0;
+  padding-left: 24px;
+}
+
+.bullet-list {
+  list-style-type: disc;
+}
+
+.numbered-list {
+  list-style-type: decimal;
+}
+
+.bullet-list li,
+.numbered-list li {
+  margin: 6px 0;
+  line-height: 1.6;
+  color: var(--text-color);
+  padding-left: 4px;
+}
+
+.bullet-list li::marker {
+  color: var(--primary-color);
+  font-weight: bold;
+}
+
+.numbered-list li::marker {
+  color: var(--primary-color);
+  font-weight: bold;
+}
+
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Highlight important text */
+.structured-response strong,
+.structured-response b {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* Code or legal terms */
+.structured-response code {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+[data-theme="dark"] .structured-response code {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .chat-modal-overlay {
@@ -316,5 +434,27 @@ body.dark .message-content {
 
   .message {
     max-width: 90%;
+  }
+  
+  .response-heading {
+    font-size: 1rem;
+  }
+  
+  .bullet-list,
+  .numbered-list {
+    padding-left: 20px;
+  }
+  
+  .chat-download-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  
+  .chat-download-btn span:first-child {
+    display: none;
+  }
+  
+  .chat-header-actions {
+    gap: 8px;
   }
 }

@@ -10,6 +10,8 @@ const passport = require('./config/passport');
 const authRoutes = require('./routes/auth');
 const ragRoutes = require('./routes/rag');
 const costEstimateRoutes = require('./routes/costEstimate');
+const lawyersRoutes = require('./routes/lawyers');
+const complaintRoutes = require('./routes/complaint');
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads/profiles');
@@ -53,6 +55,8 @@ app.use(passport.session());
 app.use('/auth', authRoutes);
 app.use('/rag', ragRoutes);
 app.use('/api', costEstimateRoutes);
+app.use('/api/lawyers', lawyersRoutes);
+app.use('/api/complaint', complaintRoutes);
 
 app.get("/", function(req, res) {
   res.send("Legal Chatbot API Server");

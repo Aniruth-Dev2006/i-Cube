@@ -2,13 +2,17 @@ import { useState } from 'react';
 import { authService } from '../services/authService';
 import './EditProfile.css';
 
+const API_URL = 'http://localhost:3000';
+
 function EditProfile({ user, onUpdate, onCancel }) {
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || ''
   });
   const [selectedFile, setSelectedFile] = useState(null);
-  const [preview, setPreview] = useState(user?.picture || '');
+  const [preview, setPreview] = useState(
+    user?.picture ? (user.picture.startsWith('http') ? user.picture : `${API_URL}${user.picture}`) : ''
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
