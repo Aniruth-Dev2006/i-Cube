@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { authService } from '../services/authService';
 import './EditProfile.css';
 
@@ -16,6 +16,28 @@ function EditProfile({ user, onUpdate, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    // Load fresh user data from backend
+    const loadUserData = async () => {
+      try {
+        const response = await authService.getCurrentUser();
+        if (response.user) {
+          setFormData({
+            name: response.user.name || '',
+            email: response.user.email || ''
+          });
+          const pictureUrl = response.user.picture 
+            ? (response.user.picture.startsWith('http') ? response.user.picture : `${API_URL}${response.user.picture}`)
+            : '';
+          setPreview(pictureUrl);
+        }
+      } catch (err) {
+        console.error('Error loading user data:', err);
+      }
+    };
+    loadUserData();
+  }, []);
 
   const handleChange = (e) => {
     setFormData({

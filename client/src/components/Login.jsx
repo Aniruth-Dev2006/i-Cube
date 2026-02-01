@@ -29,7 +29,7 @@ function Login() {
     try {
       const response = await authService.login(formData);
       console.log('Login successful:', response);
-      navigate('/dashboard');
+      navigate('/chat');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
     } finally {

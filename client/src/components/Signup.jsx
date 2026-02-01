@@ -44,7 +44,7 @@ function Signup() {
       const { confirmPassword, ...signupData } = formData;
       const response = await authService.signup(signupData);
       console.log('Signup successful:', response);
-      navigate('/dashboard');
+      navigate('/chat');
     } catch (err) {
       setError(err.response?.data?.message || 'Signup failed. Please try again.');
     } finally {

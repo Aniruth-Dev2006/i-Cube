@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { Search, MapPin, Briefcase, Mail, Phone } from 'lucide-react';
+import Header from './Header';
+import Settings from './Settings';
+import { authService } from '../services/authService';
 import './SearchLawyers.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 function SearchLawyers() {
+  const [user, setUser] = useState(null);
   const [lawyers, setLawyers] = useState([]);
   const [filteredLawyers, setFilteredLawyers] = useState([]);
   const [domains, setDomains] = useState([]);
@@ -12,11 +18,21 @@ function SearchLawyers() {
   const [selectedDomain, setSelectedDomain] = useState('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await authService.getCurrentUser();
+        setUser(response.user);
+      } catch (error) {
+        navigate('/login');
+      }
+    };
+    fetchUser();
     fetchDomains();
     fetchLawyers();
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     filterLawyers();
@@ -79,139 +95,123 @@ function SearchLawyers() {
 
   if (loading) {
     return (
-      <div className="search-lawyers-container">
-        <div className="loading">Loading lawyers...</div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-sm text-muted-foreground">Loading lawyers...</div>
       </div>
     );
   }
 
   return (
-    <div className="search-lawyers-container">
-      <div className="search-lawyers-header">
-        <h1>🔍 Find Your Legal Expert</h1>
-        <p>Connect with experienced lawyers specializing in various legal domains</p>
+    <div className="relative min-h-screen overflow-hidden bg-background">
+      {/* Background Glows */}
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-[-20%] top-[-10%] h-[500px] w-[500px] rounded-full bg-orange-500/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-20%] h-[500px] w-[500px] rounded-full bg-amber-500/10 blur-[120px]" />
       </div>
 
-      {/* Featured Stats Section */}
-      <div className="stats-section">
-        <div className="stat-card">
-          <div className="stat-icon">👨‍⚖️</div>
-          <div className="stat-number">{lawyers.length}+</div>
-          <div className="stat-label">Expert Lawyers</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">⚖️</div>
-          <div className="stat-number">{domains.length - 1}</div>
-          <div className="stat-label">Legal Domains</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">⭐</div>
-          <div className="stat-number">100%</div>
-          <div className="stat-label">Success Rate</div>
-        </div>
-      </div>
+      <Header user={user} />
+      <Settings />
 
-      {/* Search and Filter Section */}
-      <div className="search-section">
-        <h2 className="section-title">Search & Filter</h2>
-        <div className="search-filters">
-          <div className="search-bar">
+      <main className="container mx-auto max-w-7xl px-4 pt-24 pb-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold">Find Legal Experts</h1>
+          <p className="text-sm text-muted-foreground">
+            Connect with experienced lawyers specializing in various legal domains
+          </p>
+        </div>
+
+        {/* Search and Filter */}
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search by name or domain..."
               value={searchTerm}
               onChange={handleSearchChange}
-              className="search-input"
+              className="w-full rounded-lg border border-border bg-background py-2 pl-10 pr-4 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
-            <span className="search-icon">🔍</span>
           </div>
 
-          <div className="domain-filter">
-            <label htmlFor="domain-select">Legal Domain:</label>
-            <select
-              id="domain-select"
-              value={selectedDomain}
-              onChange={handleDomainChange}
-              className="domain-select"
-            >
-              {domains.map((domain) => (
-                <option key={domain} value={domain}>
-                  {domain}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={selectedDomain}
+            onChange={handleDomainChange}
+            className="rounded-lg border border-border bg-background px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-ring sm:w-48"
+          >
+            {domains.map((domain) => (
+              <option key={domain} value={domain}>
+                {domain}
+              </option>
+            ))}
+          </select>
         </div>
-      </div>
 
-      {error && <div className="error-message">{error}</div>}
-
-      {/* Legal Domains Info */}
-      <div className="domains-info">
-        <h3>📚 Available Legal Domains</h3>
-        <div className="domain-tags">
-          {domains.filter(d => d !== 'All').map((domain) => (
-            <span 
-              key={domain} 
-              className={`domain-tag ${selectedDomain === domain ? 'active' : ''}`}
-              onClick={() => setSelectedDomain(domain)}
-            >
-              {domain}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div className="results-summary">
-        <p>
-          <strong>{filteredLawyers.length}</strong> {filteredLawyers.length === 1 ? 'lawyer' : 'lawyers'} 
-          {selectedDomain !== 'All' && <span> in <strong>{selectedDomain}</strong></span>}
-        </p>
-      </div>
-
-      <div className="lawyers-grid">
-        {filteredLawyers.length > 0 ? (
-          filteredLawyers.map((lawyer) => (
-            <div key={lawyer._id} className="lawyer-card">
-              <div className="lawyer-avatar">
-                {lawyer.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="lawyer-info">
-                <h3>{lawyer.name}</h3>
-                <p className="lawyer-domain">⚖️ {lawyer.domain}</p>
-                <div className="lawyer-badges">
-                  <span className="badge">✓ Verified</span>
-                  <span className="badge">🏆 Expert</span>
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="no-results">
-            <div className="no-results-icon">😔</div>
-            <p>No lawyers found matching your criteria.</p>
-            <button onClick={() => { setSearchTerm(''); setSelectedDomain('All'); }}>
-              🔄 Clear Filters
-            </button>
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+            {error}
           </div>
         )}
-      </div>
 
-      {/* Info Footer */}
-      <div className="info-footer">
-        <div className="info-card">
-          <h4>💼 Professional Service</h4>
-          <p>All lawyers are verified and experienced professionals</p>
+        <div className="mb-6">
+          <p className="text-sm text-muted-foreground">
+            <strong>{filteredLawyers.length}</strong> {filteredLawyers.length === 1 ? 'lawyer' : 'lawyers'}
+            {selectedDomain !== 'All' && <span> in <strong>{selectedDomain}</strong></span>}
+          </p>
         </div>
-        <div className="info-card">
-          <h4>🔒 Confidential</h4>
-          <p>Your consultations are completely confidential</p>
+
+        {/* Lawyers Grid */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredLawyers.length > 0 ? (
+            filteredLawyers.map((lawyer) => (
+              <div key={lawyer._id} className="rounded-lg border border-border bg-card p-6 shadow-sm">
+                <div className="mb-4 flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg font-semibold text-primary-foreground">
+                    {lawyer.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium">{lawyer.name}</h3>
+                    <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Briefcase className="h-3 w-3" />
+                      {lawyer.domain}
+                    </p>
+                  </div>
+                </div>
+                {lawyer.location && (
+                  <p className="mb-2 flex items-center gap-1 text-sm text-muted-foreground">
+                    <MapPin className="h-3 w-3" />
+                    {lawyer.location}
+                  </p>
+                )}
+                {lawyer.email && (
+                  <p className="mb-2 flex items-center gap-1 text-sm text-muted-foreground">
+                    <Mail className="h-3 w-3" />
+                    {lawyer.email}
+                  </p>
+                )}
+                {lawyer.phone && (
+                  <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Phone className="h-3 w-3" />
+                    {lawyer.phone}
+                  </p>
+                )}
+              </div>
+            ))
+          ) : (
+            <div className="col-span-full flex flex-col items-center justify-center py-12 text-center">
+              <p className="mb-4 text-muted-foreground">No lawyers found matching your criteria.</p>
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setSelectedDomain('All');
+                }}
+                className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent"
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
         </div>
-        <div className="info-card">
-          <h4>📞 24/7 Support</h4>
-          <p>Get legal assistance whenever you need it</p>
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

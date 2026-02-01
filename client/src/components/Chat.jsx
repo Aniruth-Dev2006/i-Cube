@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { jsPDF } from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
+import { Bot, User, FileText, Download, Zap, MessageSquare, AlertTriangle, Paperclip, X } from 'lucide-react';
 import './Chat.css';
 
 // Set up PDF.js worker for Vite
@@ -634,7 +635,7 @@ function Chat({ onClose, selectedBot = null }) {
       <div className="chat-modal" onClick={(e) => e.stopPropagation()}>
         <div className="chat-header">
           <h2>
-            <span>🤖</span>
+            <Bot size={24} strokeWidth={2} />
             {botNames[selectedBot] || botNames.default}
           </h2>
           <div className="chat-header-actions">
@@ -644,11 +645,11 @@ function Chat({ onClose, selectedBot = null }) {
                 onClick={downloadAsPDF}
                 title="Download as PDF"
               >
-                📄 Download PDF
+                <Download size={16} /> Download PDF
               </button>
             )}
             <button className="chat-close" onClick={onClose}>
-              ×
+              <X size={24} />
             </button>
           </div>
         </div>
@@ -656,20 +657,20 @@ function Chat({ onClose, selectedBot = null }) {
         <div className="chat-messages">
           {messages.length === 0 ? (
             <div className="empty-chat">
-              <div className="empty-chat-icon">💬</div>
+              <div className="empty-chat-icon"><MessageSquare size={48} strokeWidth={1.5} /></div>
               <h3>Start a Conversation</h3>
               <p>Ask me anything about Indian law including civil, criminal, cyber, consumer, family, property law and more</p>
               <div className="feature-highlights">
                 <div className="feature-item">
-                  <span className="feature-icon">📄</span>
+                  <span className="feature-icon"><FileText size={20} /></span>
                   <span>Upload PDF documents</span>
                 </div>
                 <div className="feature-item">
-                  <span className="feature-icon">🤖</span>
+                  <span className="feature-icon"><Bot size={20} /></span>
                   <span>AI-powered legal advice</span>
                 </div>
                 <div className="feature-item">
-                  <span className="feature-icon">⚡</span>
+                  <span className="feature-icon"><Zap size={20} /></span>
                   <span>Instant responses</span>
                 </div>
               </div>
@@ -682,7 +683,7 @@ function Chat({ onClose, selectedBot = null }) {
                 ) : (
                   <>
                     <div className="message-avatar">
-                      {message.type === 'user' ? '👤' : '🤖'}
+                      {message.type === 'user' ? <User size={20} /> : <Bot size={20} />}
                     </div>
                     <div className="message-content">
                       {message.type === 'bot' ? (
@@ -702,7 +703,7 @@ function Chat({ onClose, selectedBot = null }) {
 
           {loading && (
             <div className="message bot">
-              <div className="message-avatar">🤖</div>
+              <div className="message-avatar"><Bot size={20} /></div>
               <div className="typing-indicator">
                 <div className="typing-dot"></div>
                 <div className="typing-dot"></div>
@@ -713,7 +714,7 @@ function Chat({ onClose, selectedBot = null }) {
 
           {error && (
             <div className="error-message">
-              ⚠️ {error}
+              <AlertTriangle size={16} /> {error}
             </div>
           )}
 
@@ -725,12 +726,12 @@ function Chat({ onClose, selectedBot = null }) {
           {uploadedFiles.length > 0 && (
             <div className="uploaded-files-section">
               <div className="uploaded-files-header">
-                <span className="files-title">📎 Attached Documents ({uploadedFiles.length})</span>
+                <span className="files-title"><Paperclip size={16} /> Attached Documents ({uploadedFiles.length})</span>
               </div>
               <div className="uploaded-files-list">
                 {uploadedFiles.map((file, index) => (
                   <div key={index} className="uploaded-file-item">
-                    <span className="file-icon">📄</span>
+                    <span className="file-icon"><FileText size={16} /></span>
                     <span className="file-name">{file.name}</span>
                     <span className="file-size">({(file.size / 1024).toFixed(1)} KB)</span>
                     <button
@@ -738,7 +739,7 @@ function Chat({ onClose, selectedBot = null }) {
                       onClick={() => removeFile(index)}
                       title="Remove file"
                     >
-                      ×
+                      <X size={16} />
                     </button>
                   </div>
                 ))}
