@@ -12,6 +12,8 @@ const ragRoutes = require('./routes/rag');
 const costEstimateRoutes = require('./routes/costEstimate');
 const lawyersRoutes = require('./routes/lawyers');
 const complaintRoutes = require('./routes/complaint');
+const lawStudentRoutes = require('./routes/lawStudent');
+const legalAssistantRoutes = require('./routes/legalAssistant');
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads/profiles');
@@ -29,8 +31,8 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files from uploads directory
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -53,10 +55,12 @@ app.use(passport.session());
 
 // Routes
 app.use('/auth', authRoutes);
-app.use('/rag', ragRoutes);
+app.use('/api/rag', ragRoutes);
 app.use('/api', costEstimateRoutes);
 app.use('/api/lawyers', lawyersRoutes);
 app.use('/api/complaint', complaintRoutes);
+app.use('/api/law-student', lawStudentRoutes);
+app.use('/api/legal-assistant', legalAssistantRoutes);
 
 app.get("/", function(req, res) {
   res.send("Legal Chatbot API Server");
